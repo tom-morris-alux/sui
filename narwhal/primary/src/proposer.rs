@@ -361,7 +361,7 @@ impl Proposer {
             }
 
             tokio::select! {
-
+                //get batches from no committed header before commit round, re-transmit it into digests for make header into next round
                 Some((commit_round, commit_headers)) = self.rx_commited_own_headers.recv() => {
                     // Remove committed headers from the list of pending
                     for round in &commit_headers {

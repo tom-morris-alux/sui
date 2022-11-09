@@ -18,7 +18,10 @@ pub fn start_admin_server(
     tx_state_handler: Option<Sender<ReconfigureNotification>>,
 ) -> Vec<JoinHandle<()>> {
     let mut router = Router::new()
+        //yilu active peers
         .route("/peers", get(get_peers))
+        //yilu for worker: other validator same worker id peers and primary peer.
+        //yilu for primary: all other primaries peers and all workers peers.
         .route("/known_peers", get(get_known_peers));
 
     // Primaries will have this service enabled
