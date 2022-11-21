@@ -113,87 +113,56 @@ impl Primary {
         let node_metrics = Arc::new(metrics.node_metrics.unwrap());
         let network_connection_metrics = metrics.network_connection_metrics.unwrap();
 
-        //from primary server to primary proposal.
-        //process our txs batch digests report from workers
         let (tx_our_digests, rx_our_digests) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_our_digests,
             &primary_channel_metrics.tx_our_digests_total,
         );
-        
-        //from primary core to primary proposal.
-        //process certificate, when received 2/3 statke certificate at current round, send these certificates as parent to proposal.
         let (tx_parents, rx_parents) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_parents,
             &primary_channel_metrics.tx_parents_total,
         );
-        
-        //from primary proposal to primary core.
-        //proposal make the header send to primary core to process - 1. broadcast to other primaries, 2. sync missing payload, 3. parents, process vote
         let (tx_headers, rx_headers) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_headers,
             &primary_channel_metrics.tx_headers_total,
         );
-        
-        //from synchronizer to header waiter
-        //when process header created by other primaries, sync missing payload, send to header waiter to request to worker.
-        //when process header, sync missing parents, send to header waiter to request to other primaries.(will response immediately, and send certificate request back.)
         let (tx_header_waiter, rx_header_waiter) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_header_waiter,
             &primary_channel_metrics.tx_header_waiter_total,
         );
-        
-        //from synchronizer to certificate waiter
-        //when process certificate(1. self ceate 2. other report 3. sync and loopback), fetch missing ancestors, send to certificate waiter to send fetch certificate request to other primaries.
         let (tx_certificate_waiter, rx_certificate_waiter) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_certificate_waiter,
             &primary_channel_metrics.tx_certificate_waiter_total,
         );
-        
-        //from header waiter to primary core
-        //when sync payload and parets, other end send the response back to header waiter, then header waiter send the header to loopback channel to continue the process.
         let (tx_headers_loopback, rx_headers_loopback) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_headers_loopback,
             &primary_channel_metrics.tx_headers_loopback_total,
         );
-        
-        //from certificate waiter to primary core
-        //when fetch missing ancestors, other end send response back to certificate waiter,  then certificate waiter send the response to loopback channel to continue the process.
         let (tx_certificates_loopback, rx_certificates_loopback) = channel_with_total(
             1, // Only one inflight item is possible.
             &primary_channel_metrics.tx_certificates_loopback,
             &primary_channel_metrics.tx_certificates_loopback_total,
         );
-        
-        //from PrimaryReceiverHandler to primary core
-        //receive certificate, vote, header from other primaries and send to primary core to sanitize and process.
         let (tx_primary_messages, rx_primary_messages) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_primary_messages,
             &primary_channel_metrics.tx_primary_messages_total,
         );
-        //use for external consensus
         let (tx_block_synchronizer_commands, rx_block_synchronizer_commands) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_block_synchronizer_commands,
             &primary_channel_metrics.tx_block_synchronizer_commands_total,
         );
-        
-        //from admin server to primary state handler
-        //send ReconfigureNotification
         let (tx_state_handler, rx_state_handler) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_state_handler,
             &primary_channel_metrics.tx_state_handler_total,
         );
-        //from state handle to proposal
-        //when committed certificates, find the certificates created by self, send it to proposal
-        //prososal will add the batch digest in uncommitted certificates into digest vec again.
         let (tx_commited_own_headers, rx_commited_own_headers) = channel_with_total(
             CHANNEL_CAPACITY,
             &primary_channel_metrics.tx_commited_own_headers,
@@ -230,14 +199,12 @@ impl Primary {
         let address = address
             .replace(0, |_protocol| Some(Protocol::Ip4(Primary::INADDR_ANY)))
             .unwrap();
-        //process request from other primary
         let primary_service = PrimaryToPrimaryServer::new(PrimaryReceiverHandler {
             tx_primary_messages: tx_primary_messages.clone(),
             certificate_store: certificate_store.clone(),
             payload_store: payload_store.clone(),
             proposer_store: proposer_store.clone(),
         });
-        //process request from workers
         let worker_service = WorkerToPrimaryServer::new(WorkerReceiverHandler {
             tx_our_digests,
             payload_store: payload_store.clone(),
