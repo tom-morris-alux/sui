@@ -34,7 +34,7 @@ use crate::{
     test_utils::to_sender_signed_transaction,
 };
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn test_start_epoch_change() {
     // Create a sender, owning an object and a gas object.
     let (sender, sender_key): (_, AccountKeyPair) = get_key_pair();
@@ -342,8 +342,8 @@ async fn test_cross_epoch_effects_cert() {
     net.committee.epoch += 1;
     // Call to execute_transaction can still succeed.
     let (tx_cert, effects_cert) = net.execute_transaction(&transaction).await.unwrap();
-    assert_eq!(tx_cert.auth_sig().epoch, 0);
-    assert_eq!(effects_cert.auth_signature.epoch, 1);
+    assert_eq!(tx_cert.epoch(), 0);
+    assert_eq!(effects_cert.epoch(), 1);
 }
 
 fn enable_reconfig(states: &[Arc<AuthorityState>]) {

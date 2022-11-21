@@ -4,20 +4,20 @@
 use super::{base_types::*, batch::*, committee::Committee, error::*, event::Event};
 use crate::committee::{EpochId, StakeUnit};
 use crate::crypto::{
-    sha3_hash, AuthoritySignInfo, AuthoritySignInfoTrait, AuthoritySignature,
-    AuthorityStrongQuorumSignInfo, Ed25519SuiSignature, EmptySignInfo, Signable, Signature,
-    SignatureScheme, SuiSignature, SuiSignatureInner, ToFromBytes,
+    sha3_hash, AuthoritySignInfo, AuthoritySignature, AuthorityStrongQuorumSignInfo,
+    Ed25519SuiSignature, EmptySignInfo, Signable, Signature, SignatureScheme, SuiSignature,
+    SuiSignatureInner, ToFromBytes,
 };
 use crate::gas::GasCostSummary;
 use crate::message_envelope::{Envelope, Message, TrustedEnvelope, VerifiedEnvelope};
 use crate::messages_checkpoint::{
-    AuthenticatedCheckpoint, CheckpointSequenceNumber, SignedCheckpointFragmentMessage,
+    AuthenticatedCheckpoint, CheckpointSequenceNumber, CheckpointSignatureMessage,
 };
 use crate::object::{Object, ObjectFormatOptions, Owner, OBJECT_START_VERSION};
 use crate::storage::{DeleteKind, WriteKind};
 use crate::{SUI_SYSTEM_STATE_OBJECT_ID, SUI_SYSTEM_STATE_OBJECT_SHARED_VERSION};
 use byteorder::{BigEndian, ReadBytesExt};
-use fastcrypto::encoding::{Base64, Encoding};
+use fastcrypto::encoding::{Base64, Encoding, Hex};
 use itertools::Either;
 use move_binary_format::access::ModuleAccess;
 use move_binary_format::file_format::LocalIndex;
@@ -28,7 +28,6 @@ use move_core_types::{
     value::MoveStructLayout,
 };
 use name_variant::NamedVariant;
-use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::Bytes;
@@ -356,7 +355,7 @@ impl Display for SingleTransactionKind {
                 let (object_id, seq, digest) = t.object_ref;
                 writeln!(writer, "Object ID : {}", &object_id)?;
                 writeln!(writer, "Sequence Number : {:?}", seq)?;
-                writeln!(writer, "Object Digest : {}", encode_bytes_hex(digest.0))?;
+                writeln!(writer, "Object Digest : {}", Hex::encode(digest.0))?;
             }
             Self::TransferSui(t) => {
                 writeln!(writer, "Transaction Kind : Transfer SUI")?;
@@ -373,7 +372,7 @@ impl Display for SingleTransactionKind {
                 for (object_id, seq, digest) in &p.coins {
                     writeln!(writer, "Object ID : {}", &object_id)?;
                     writeln!(writer, "Sequence Number : {:?}", seq)?;
-                    writeln!(writer, "Object Digest : {}", encode_bytes_hex(digest.0))?;
+                    writeln!(writer, "Object Digest : {}", Hex::encode(digest.0))?;
                 }
                 writeln!(writer, "Recipients:")?;
                 for recipient in &p.recipients {
@@ -390,7 +389,7 @@ impl Display for SingleTransactionKind {
                 for (object_id, seq, digest) in &p.coins {
                     writeln!(writer, "Object ID : {}", &object_id)?;
                     writeln!(writer, "Sequence Number : {:?}", seq)?;
-                    writeln!(writer, "Object Digest : {}", encode_bytes_hex(digest.0))?;
+                    writeln!(writer, "Object Digest : {}", Hex::encode(digest.0))?;
                 }
                 writeln!(writer, "Recipients:")?;
                 for recipient in &p.recipients {
@@ -407,7 +406,7 @@ impl Display for SingleTransactionKind {
                 for (object_id, seq, digest) in &p.coins {
                     writeln!(writer, "Object ID : {}", &object_id)?;
                     writeln!(writer, "Sequence Number : {:?}", seq)?;
-                    writeln!(writer, "Object Digest : {}", encode_bytes_hex(digest.0))?;
+                    writeln!(writer, "Object Digest : {}", Hex::encode(digest.0))?;
                 }
                 writeln!(writer, "Recipient:")?;
                 writeln!(writer, "{}", &p.recipient)?;
@@ -1674,52 +1673,17 @@ impl TransactionEffects {
     pub fn gas_cost_summary(&self) -> &GasCostSummary {
         &self.gas_used
     }
+}
 
-    pub fn is_object_mutated_here(&self, obj_ref: ObjectRef) -> bool {
-        // The mutated or created case
-        if self.all_mutated().any(|(oref, _, _)| *oref == obj_ref) {
-            return true;
-        }
+impl Message for TransactionEffects {
+    type DigestType = TransactionEffectsDigest;
 
-        // The deleted case
-        if obj_ref.2 == ObjectDigest::OBJECT_DIGEST_DELETED
-            && self
-                .deleted
-                .iter()
-                .any(|(id, seq, _)| *id == obj_ref.0 && seq.increment() == obj_ref.1)
-        {
-            return true;
-        }
-
-        // The wrapped case
-        if obj_ref.2 == ObjectDigest::OBJECT_DIGEST_WRAPPED
-            && self
-                .wrapped
-                .iter()
-                .any(|(id, seq, _)| *id == obj_ref.0 && seq.increment() == obj_ref.1)
-        {
-            return true;
-        }
-        false
-    }
-
-    pub fn to_sign_effects(
-        self,
-        epoch: EpochId,
-        authority_name: &AuthorityName,
-        secret: &dyn signature::Signer<AuthoritySignature>,
-    ) -> SignedTransactionEffects {
-        let transaction_effects_digest = OnceCell::from(self.digest());
-        let auth_signature = AuthoritySignInfo::new(epoch, &self, *authority_name, secret);
-        SignedTransactionEffects {
-            transaction_effects_digest,
-            effects: self,
-            auth_signature,
-        }
-    }
-
-    pub fn digest(&self) -> TransactionEffectsDigest {
+    fn digest(&self) -> Self::DigestType {
         TransactionEffectsDigest(sha3_hash(self))
+    }
+
+    fn verify(&self) -> SuiResult {
+        Ok(())
     }
 }
 
@@ -1778,11 +1742,7 @@ impl Default for TransactionEffects {
             deleted: Vec::new(),
             wrapped: Vec::new(),
             gas_object: (
-                (
-                    ObjectID::random(),
-                    SequenceNumber::new(),
-                    ObjectDigest::new([0; 32]),
-                ),
+                random_object_ref(),
                 Owner::AddressOwner(SuiAddress::default()),
             ),
             events: Vec::new(),
@@ -1791,64 +1751,10 @@ impl Default for TransactionEffects {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TransactionEffectsEnvelope<S> {
-    // This is a cache of an otherwise expensive to compute value.
-    // DO NOT serialize or deserialize from the network or disk.
-    #[serde(skip)]
-    transaction_effects_digest: OnceCell<TransactionEffectsDigest>,
-
-    pub effects: TransactionEffects,
-    pub auth_signature: S,
-}
-
-impl<S> TransactionEffectsEnvelope<S> {
-    pub fn digest(&self) -> &TransactionEffectsDigest {
-        self.transaction_effects_digest
-            .get_or_init(|| self.effects.digest())
-    }
-}
-
+pub type TransactionEffectsEnvelope<S> = Envelope<TransactionEffects, S>;
 pub type UnsignedTransactionEffects = TransactionEffectsEnvelope<EmptySignInfo>;
 pub type SignedTransactionEffects = TransactionEffectsEnvelope<AuthoritySignInfo>;
-
-impl SignedTransactionEffects {
-    pub fn verify(&self, committee: &Committee) -> SuiResult {
-        self.auth_signature.verify(&self.effects, committee)
-    }
-}
-
-impl PartialEq for SignedTransactionEffects {
-    fn eq(&self, other: &Self) -> bool {
-        self.effects == other.effects && self.auth_signature == other.auth_signature
-    }
-}
-
 pub type CertifiedTransactionEffects = TransactionEffectsEnvelope<AuthorityStrongQuorumSignInfo>;
-
-impl CertifiedTransactionEffects {
-    pub fn new(
-        effects: TransactionEffects,
-        signatures: Vec<AuthoritySignInfo>,
-        committee: &Committee,
-    ) -> SuiResult<Self> {
-        Ok(Self {
-            transaction_effects_digest: OnceCell::from(effects.digest()),
-            effects,
-            auth_signature: AuthorityStrongQuorumSignInfo::new_from_auth_sign_infos(
-                signatures, committee,
-            )?,
-        })
-    }
-
-    pub fn to_unsigned_effects(self) -> UnsignedTransactionEffects {
-        UnsignedTransactionEffects {
-            transaction_effects_digest: self.transaction_effects_digest,
-            effects: self.effects,
-            auth_signature: EmptySignInfo {},
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum InputObjectKind {
@@ -2022,10 +1928,18 @@ pub struct ConsensusTransaction {
     pub kind: ConsensusTransactionKind,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum ConsensusTransactionKey {
+    Certificate(TransactionDigest),
+    CheckpointSignature(AuthorityName, CheckpointSequenceNumber),
+    EndOfPublish(AuthorityName),
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ConsensusTransactionKind {
     UserTransaction(Box<CertifiedTransaction>),
-    Checkpoint(Box<SignedCheckpointFragmentMessage>),
+    CheckpointSignature(Box<CheckpointSignatureMessage>),
+    EndOfPublish(AuthorityName),
 }
 
 impl ConsensusTransaction {
@@ -2044,13 +1958,23 @@ impl ConsensusTransaction {
         }
     }
 
-    pub fn new_checkpoint_message(fragment: SignedCheckpointFragmentMessage) -> Self {
+    pub fn new_checkpoint_signature_message(data: CheckpointSignatureMessage) -> Self {
         let mut hasher = DefaultHasher::new();
-        fragment.hash(&mut hasher);
+        data.summary.auth_signature.signature.hash(&mut hasher);
         let tracking_id = hasher.finish().to_be_bytes();
         Self {
             tracking_id,
-            kind: ConsensusTransactionKind::Checkpoint(Box::new(fragment)),
+            kind: ConsensusTransactionKind::CheckpointSignature(Box::new(data)),
+        }
+    }
+
+    pub fn new_end_of_publish(authority: AuthorityName) -> Self {
+        let mut hasher = DefaultHasher::new();
+        authority.hash(&mut hasher);
+        let tracking_id = hasher.finish().to_be_bytes();
+        Self {
+            tracking_id,
+            kind: ConsensusTransactionKind::EndOfPublish(authority),
         }
     }
 
@@ -2065,8 +1989,34 @@ impl ConsensusTransaction {
             ConsensusTransactionKind::UserTransaction(certificate) => {
                 certificate.verify_signature(committee)
             }
-            ConsensusTransactionKind::Checkpoint(fragment) => fragment.verify(),
+            ConsensusTransactionKind::CheckpointSignature(data) => data.verify(committee),
+            ConsensusTransactionKind::EndOfPublish(_) => Ok(()),
         }
+    }
+
+    pub fn key(&self) -> ConsensusTransactionKey {
+        match &self.kind {
+            ConsensusTransactionKind::UserTransaction(cert) => {
+                ConsensusTransactionKey::Certificate(*cert.digest())
+            }
+            ConsensusTransactionKind::CheckpointSignature(data) => {
+                ConsensusTransactionKey::CheckpointSignature(
+                    data.summary.auth_signature.authority,
+                    data.summary.summary.sequence_number,
+                )
+            }
+            ConsensusTransactionKind::EndOfPublish(authority) => {
+                ConsensusTransactionKey::EndOfPublish(*authority)
+            }
+        }
+    }
+
+    pub fn is_user_certificate(&self) -> bool {
+        matches!(self.kind, ConsensusTransactionKind::UserTransaction(_))
+    }
+
+    pub fn is_end_of_publish(&self) -> bool {
+        matches!(self.kind, ConsensusTransactionKind::EndOfPublish(_))
     }
 }
 

@@ -1,24 +1,26 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
+
 use super::*;
 use crate::authority::{authority_tests::init_state_with_objects, AuthorityState};
+use crate::checkpoints::CheckpointServiceNoop;
 use crate::consensus_handler::VerifiedSequencedConsensusTransaction;
 use crate::test_utils::to_sender_signed_transaction;
 use move_core_types::{account_address::AccountAddress, ident_str};
-use narwhal_types::Transactions;
+use multiaddr::Multiaddr;
 use narwhal_types::TransactionsServer;
+use narwhal_types::{Certificate, ConsensusOutput, Transactions};
 use narwhal_types::{Empty, TransactionProto};
 use sui_network::tonic;
 use sui_types::{
     base_types::{ObjectID, TransactionDigest},
     gas_coin::GasCoin,
-    messages::{
-        CallArg, CertifiedTransaction, ConsensusTransactionKind, ObjectArg, TransactionData,
-    },
+    messages::{CallArg, CertifiedTransaction, ObjectArg, TransactionData},
     object::{MoveObject, Object, Owner, OBJECT_START_VERSION},
 };
 use test_utils::test_account_keys;
 use tokio::sync::mpsc::channel;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Fixture: a few test gas objects.
 pub fn test_gas_objects() -> Vec<Object> {
@@ -96,132 +98,49 @@ pub async fn test_certificates(authority: &AuthorityState) -> Vec<CertifiedTrans
 }
 
 #[tokio::test]
-async fn listen_to_sequenced_transaction() {
-    let (tx_sui_to_consensus, rx_sui_to_consensus) = channel(1);
-
-    // Make an authority state.
-    let mut objects = test_gas_objects();
-    objects.push(test_shared_object());
-    let state = init_state_with_objects(objects).await;
-
-    // Make a sample (serialized) consensus transaction.
-    let certificate = test_certificates(&state).await.pop().unwrap();
-    let message = ConsensusTransaction::new_certificate_message(&state.name, certificate.clone());
-    let serialized = bincode::serialize(&message).unwrap();
-
-    // Set the shared object locks.
-    state
-        .handle_consensus_transaction(VerifiedSequencedConsensusTransaction::new_test(
-            ConsensusTransaction::new_certificate_message(&state.name, certificate),
-        ))
-        .await
-        .unwrap();
-
-    // Spawn a consensus listener.
-    ConsensusListener::spawn(/* rx_consensus_listener */ rx_sui_to_consensus);
-
-    // Submit a sample consensus transaction.
-    let (waiter, signals) = ConsensusWaiter::new();
-
-    let message = ConsensusListenerMessage::New(serialized.clone(), signals);
-    tx_sui_to_consensus.send(message).await.unwrap();
-
-    // Notify the consensus listener that the transaction has been sequenced.
-    tokio::task::yield_now().await;
-    tx_sui_to_consensus
-        .send(ConsensusListenerMessage::Processed(serialized.clone()))
-        .await
-        .unwrap();
-
-    // Ensure the caller get notified from the consensus listener.
-    assert!(waiter.wait_for_result().await.is_ok());
-}
-
-#[tokio::test]
 async fn submit_transaction_to_consensus_adapter() {
-    let port = sui_config::utils::get_available_port();
-    let consensus_address: Multiaddr = format!("/dns/localhost/tcp/{port}/http").parse().unwrap();
-    let (tx_consensus_listener, mut rx_consensus_listener) = channel(1);
-
     // Initialize an authority with a (owned) gas object and a shared object; then
     // make a test certificate.
     let mut objects = test_gas_objects();
     objects.push(test_shared_object());
     let state = init_state_with_objects(objects).await;
     let certificate = test_certificates(&state).await.pop().unwrap();
-    let expected_transaction = certificate.clone().into_data();
 
-    let committee = state.clone_committee();
-    let name = state.name;
-    let state_guard = Arc::new(state);
+    let state = Arc::new(state);
     let metrics = ConsensusAdapterMetrics::new_test();
 
+    #[derive(Clone)]
+    struct SubmitDirectly(Arc<AuthorityState>);
+
+    #[async_trait::async_trait]
+    impl SubmitToConsensus for SubmitDirectly {
+        async fn submit_to_consensus(&self, transaction: &ConsensusTransaction) -> SuiResult {
+            let authority = self.0.name;
+            let certificate = Certificate::new_test_empty(authority.try_into().unwrap());
+            let output = ConsensusOutput {
+                certificate,
+                ..Default::default()
+            };
+            self.0
+                .handle_consensus_transaction(
+                    &output,
+                    VerifiedSequencedConsensusTransaction::new_test(transaction.clone()),
+                    &Arc::new(CheckpointServiceNoop {}),
+                )
+                .await
+        }
+    }
     // Make a new consensus adapter instance.
     let adapter = ConsensusAdapter::new(
-        consensus_address.clone(),
-        tx_consensus_listener,
-        /* timeout */ Duration::from_secs(5),
+        Box::new(SubmitDirectly(state.clone())),
+        state.clone(),
         metrics,
     );
 
-    // Spawn a network listener to receive the transaction (emulating the consensus node).
-    let mut handle = ConsensusMockServer::spawn(consensus_address);
-
-    // Notify the adapter when a consensus transaction has been sequenced and executed.
-    tokio::spawn(async move {
-        while let Some(message) = rx_consensus_listener.recv().await {
-            let (serialized, replier) = match message {
-                ConsensusListenerMessage::New(serialized, replier) => (serialized, replier),
-                _ => panic!("Unexpected message {message:?}"),
-            };
-
-            let message: ConsensusTransaction =
-                bincode::deserialize(&serialized).expect("Failed to deserialize consensus tx");
-            let certificate = match message.kind {
-                ConsensusTransactionKind::UserTransaction(certificate) => certificate,
-                _ => panic!("Unexpected message {message:?}"),
-            };
-
-            // Set the shared object locks.
-            state_guard
-                .handle_consensus_transaction(VerifiedSequencedConsensusTransaction::new_test(
-                    ConsensusTransaction::new_certificate_message(&name, *certificate.clone()),
-                ))
-                .await
-                .unwrap();
-
-            // Reply to the adapter. This fails when Narwhal is not running when submitting in
-            // ConsensusAdapter, dropping the receiver. But this is ok because the submit will
-            // be retried.
-            let result = Ok(());
-            let _ = replier
-                .0
-                .send(result)
-                .tap_err(|err| println!("Failed to send success signal: {:?}", err));
-        }
-    });
-
-    let certificate = certificate.verify(&committee).unwrap();
-
     // Submit the transaction and ensure the adapter reports success to the caller. Note
     // that consensus may drop some transactions (so we may need to resubmit them).
-    loop {
-        match adapter.submit(&name, &certificate).await {
-            Ok(_) => break,
-            Err(SuiError::ConsensusConnectionBroken(..)) => (),
-            Err(e) => panic!("Unexpected error message: {e}"),
-        }
-    }
-
-    // Ensure the consensus node got the transaction.
-    let bytes = handle.recv().await.unwrap().transaction;
-    let message: ConsensusTransaction = bincode::deserialize(&bytes).unwrap();
-    match message.kind {
-        ConsensusTransactionKind::UserTransaction(x) => {
-            assert_eq!(x.into_data(), expected_transaction)
-        }
-        _ => panic!("Unexpected message {message:?}"),
-    }
+    let transaction = ConsensusTransaction::new_certificate_message(&state.name, certificate);
+    adapter.submit(transaction.clone()).unwrap().await.unwrap();
 }
 
 pub struct ConsensusMockServer {

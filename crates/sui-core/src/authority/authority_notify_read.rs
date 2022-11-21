@@ -1,8 +1,8 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::authority::authority_store::EffectsStore;
 use crate::authority::AuthorityStore;
-use crate::checkpoints::causal_order_effects::EffectsStore;
 use async_trait::async_trait;
 use either::Either;
 use futures::future::join_all;
@@ -72,6 +72,16 @@ impl<K: Eq + Hash + Clone, V: Clone> NotifyRead<K, V> {
             registration.send(value.clone()).ok();
         }
         rem
+    }
+
+    pub fn register_one(&self, key: &K) -> Registration<K, V> {
+        self.count_pending.fetch_add(1, Ordering::Relaxed);
+        let (sender, receiver) = oneshot::channel();
+        self.register(key, sender);
+        Registration {
+            this: self,
+            registration: Some((key.clone(), receiver)),
+        }
     }
 
     pub fn register_all(&self, keys: Vec<K>) -> Vec<Registration<K, V>> {
@@ -173,7 +183,7 @@ impl EffectsNotifyRead for Arc<AuthorityStore> {
         digests: Vec<TransactionDigest>,
     ) -> SuiResult<Vec<TransactionEffects>> {
         // We need to register waiters _before_ reading from the database to avoid race conditions
-        let registrations = self.notify_read.register_all(digests.clone());
+        let registrations = self.effects_notify_read.register_all(digests.clone());
         let effects = EffectsStore::get_effects(self, digests.iter())?;
         // Zipping together registrations and effects ensures returned order is the same as order of digests
         let results = effects
@@ -192,7 +202,6 @@ impl EffectsNotifyRead for Arc<AuthorityStore> {
         &self,
         digests: &[TransactionDigest],
     ) -> SuiResult<Vec<Option<TransactionEffects>>> {
-        // todo - delete checkpoint v1 EffectsStore trait and inline implementation here
         EffectsStore::get_effects(self, digests.iter())
     }
 }

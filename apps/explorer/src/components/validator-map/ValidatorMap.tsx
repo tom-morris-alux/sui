@@ -44,6 +44,10 @@ export default function ValidatorMap() {
                 }
             );
 
+            if (!res.ok) {
+                throw new Error('Failed to fetch validator map data');
+            }
+
             return res.json() as Promise<NodeLocation[]>;
         }
     );
@@ -110,7 +114,17 @@ export default function ValidatorMap() {
             <div className={styles.container}>
                 <div className={styles.contents}>
                     <div>
-                        <div className={styles.title}>Nodes</div>
+                        <div className={styles.stat}>
+                            {isLoading && (
+                                <Placeholder width="59px" height="32px" />
+                            )}
+                            {isSuccess &&
+                                countryCount &&
+                                numberFormatter.format(countryCount)}
+                        </div>
+                        <div className={styles.title}>Countries</div>
+                    </div>
+                    <div>
                         <div className={styles.stat}>
                             {isLoading && (
                                 <Placeholder width="59px" height="32px" />
@@ -122,16 +136,8 @@ export default function ValidatorMap() {
                                     numberFormatter.format(totalCount)
                             }
                         </div>
-                    </div>
-                    <div>
-                        <div className={styles.title}>Countries</div>
-                        <div className={styles.stat}>
-                            {isLoading && (
-                                <Placeholder width="59px" height="32px" />
-                            )}
-                            {isSuccess &&
-                                countryCount &&
-                                numberFormatter.format(countryCount)}
+                        <div className={styles.title}>
+                            Nodes on Devnet and Testnet
                         </div>
                     </div>
                 </div>

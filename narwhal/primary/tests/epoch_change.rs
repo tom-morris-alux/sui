@@ -8,16 +8,16 @@ use config::{Committee, Parameters};
 use fastcrypto::traits::KeyPair;
 use futures::future::{join_all, try_join_all};
 use narwhal_primary as primary;
-use node::NodeStorage;
 use primary::{NetworkModel, Primary, CHANNEL_CAPACITY};
 use prometheus::Registry;
 use std::{collections::HashMap, sync::Arc, time::Duration};
+use storage::NodeStorage;
 use test_utils::{ensure_test_environment, temp_dir, CommitteeFixture};
 use tokio::sync::watch;
 use types::ReconfigureNotification;
 
 /// The epoch changes but the stake distribution and network addresses stay the same.
-#[tokio::test]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn test_simple_epoch_change() {
     ensure_test_environment();
 

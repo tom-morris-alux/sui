@@ -20,10 +20,11 @@ use narwhal_node as node;
 use node::{
     execution_state::SimpleExecutionState,
     metrics::{primary_metrics_registry, start_prometheus_server, worker_metrics_registry},
-    Node, NodeStorage,
+    Node,
 };
 use prometheus::Registry;
 use std::sync::Arc;
+use storage::NodeStorage;
 use telemetry_subscribers::TelemetryGuards;
 use tokio::sync::mpsc::{channel, Receiver};
 use tracing::info;
@@ -31,6 +32,7 @@ use tracing::info;
 use tracing::subscriber::set_global_default;
 #[cfg(feature = "benchmark")]
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+use worker::TrivialTransactionValidator;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -271,6 +273,8 @@ async fn run(
                 worker_cache,
                 &store,
                 parameters.clone(),
+                /* tx_validator */
+                TrivialTransactionValidator::default(),
                 &registry,
             )
         }

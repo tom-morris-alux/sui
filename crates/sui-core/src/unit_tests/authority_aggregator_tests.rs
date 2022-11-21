@@ -28,9 +28,8 @@ use super::*;
 use crate::authority::AuthorityState;
 use crate::authority_client::make_authority_clients;
 use crate::authority_client::{
-    AuthorityAPI, BatchInfoResponseItemStream, CheckpointStreamResponseItemStream,
-    LocalAuthorityClient, LocalAuthorityClientFaultConfig, NetworkAuthorityClient,
-    NetworkAuthorityClientMetrics,
+    AuthorityAPI, BatchInfoResponseItemStream, LocalAuthorityClient,
+    LocalAuthorityClientFaultConfig, NetworkAuthorityClient, NetworkAuthorityClientMetrics,
 };
 use crate::test_utils::to_sender_signed_transaction;
 use crate::validator_info::make_committee;
@@ -108,6 +107,7 @@ pub async fn init_local_authorities(
             stake: 1,
             delegation: 0,
             gas_price: 1,
+            commission_rate: 0,
             network_address: sui_config::utils::new_network_address(),
             narwhal_primary_address: sui_config::utils::new_network_address(),
             narwhal_worker_address: sui_config::utils::new_network_address(),
@@ -358,7 +358,7 @@ where
         .unwrap()
         .signed_effects
         .unwrap()
-        .effects
+        .into_data()
 }
 
 pub async fn do_cert_configurable<A>(authority: &A, cert: &CertifiedTransaction)
@@ -998,13 +998,6 @@ impl AuthorityAPI for MockAuthorityApi {
         &self,
         _request: CheckpointRequest,
     ) -> Result<CheckpointResponse, SuiError> {
-        unreachable!();
-    }
-
-    async fn handle_checkpoint_stream(
-        &self,
-        _request: CheckpointStreamRequest,
-    ) -> Result<CheckpointStreamResponseItemStream, SuiError> {
         unreachable!();
     }
 

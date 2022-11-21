@@ -177,17 +177,19 @@ impl EffectsStakeMap {
         weight: StakeUnit,
         committee: &Committee,
     ) -> bool {
-        let epoch = effects.auth_signature.epoch;
+        let epoch = effects.epoch();
+        let digest = *effects.digest();
+        let (effects, sig) = effects.into_data_and_sig();
         let entry = self
             .effects_map
-            .entry((epoch, *effects.digest()))
+            .entry((epoch, digest))
             .or_insert(EffectsStakeInfo {
                 stake: 0,
-                effects: effects.effects,
+                effects,
                 signatures: vec![],
             });
         entry.stake += weight;
-        entry.signatures.push(effects.auth_signature);
+        entry.signatures.push(sig);
 
         if entry.stake >= committee.quorum_threshold() {
             self.efects_cert = CertifiedTransactionEffects::new(
@@ -530,8 +532,8 @@ where
                 .signed_effects
                 .ok_or(SuiError::AuthorityInformationUnavailable)?;
 
-            trace!(tx_digest = ?cert_digest, dependencies =? &signed_effects.effects.dependencies, "Got dependencies from source");
-            for returned_digest in &signed_effects.effects.dependencies {
+            trace!(tx_digest = ?cert_digest, dependencies =? &signed_effects.data().dependencies, "Got dependencies from source");
+            for returned_digest in &signed_effects.data().dependencies {
                 trace!(tx_digest =? returned_digest, "Found parent of missing cert");
 
                 let inner_transaction_info = source_client
@@ -1677,7 +1679,7 @@ where
                             Ok(VerifiedTransactionInfoResponse {
                                 signed_transaction: Some(inner_signed_transaction),
                                 ..
-                            }) if inner_signed_transaction.auth_sig().epoch == self.committee.epoch => {
+                            }) if inner_signed_transaction.epoch() == self.committee.epoch => {
                                 let tx_digest = inner_signed_transaction.digest();
                                 debug!(tx_digest = ?tx_digest, ?name, weight, "Received signed transaction from validator handle_transaction");
                                 state.signatures.push(inner_signed_transaction.into_inner().into_data_and_sig().1);
@@ -1741,7 +1743,7 @@ where
                                         ?tx_digest,
                                         name=?name.concise(),
                                         expected_epoch=?self.committee.epoch,
-                                        returned_epoch=?inner_signed.auth_sig().epoch,
+                                        returned_epoch=?inner_signed.epoch(),
                                         "Returned signed transaction is from wrong epoch"
                                     );
                                 }
@@ -1755,26 +1757,12 @@ where
                         };
 
                         if state.bad_stake > validity {
-                            // Too many errors
-                            debug!(
-                                tx_digest = ?tx_digest,
-                                num_errors = state.errors.len(),
-                                bad_stake = state.bad_stake,
-                                "Too many errors from validators handle_transaction, validity threshold exceeded. Errors={:?}",
-                                state.errors
-                            );
                             self.metrics
                                 .num_signatures
                                 .observe(state.signatures.len() as f64);
                             self.metrics.num_good_stake.observe(state.good_stake as f64);
                             self.metrics.num_bad_stake.observe(state.bad_stake as f64);
-
-                            let unique_errors: HashSet<_> = state.errors.into_iter().collect();
-                            return Err(SuiError::QuorumFailedToProcessTransaction {
-                                good_stake: state.good_stake,
-                                errors: unique_errors.into_iter().collect(),
-                                conflicting_tx_digests: state.conflicting_tx_digests,
-                            });
+                            return Ok(ReduceOutput::End(state));
                         }
 
                         // If we have a certificate, then finish, otherwise continue.
@@ -1900,12 +1888,7 @@ where
                                 state.errors.push(err);
                                 state.bad_stake += weight;
                                 if state.bad_stake > validity {
-                                    debug!(
-                                        tx_digest = ?tx_digest,
-                                        bad_stake = state.bad_stake,
-                                        "Too many bad responses from validators cert processing, validity threshold exceeded."
-                                    );
-                                    return Err(SuiError::QuorumFailedToExecuteCertificate { errors: state.errors });
+                                    return Ok(ReduceOutput::End(state));
                                 }
                             }
                             _ => { unreachable!("SafeClient should have ruled out this case") }
@@ -1959,10 +1942,10 @@ where
     }
 
     pub async fn get_object_info_execute(&self, object_id: ObjectID) -> SuiResult<ObjectRead> {
-        let (object_map, cert_map) = self.get_object_by_id(object_id, false).await?;
+        let (object_map, _cert_map) = self.get_object_by_id(object_id, false).await?;
         let mut object_ref_stack: Vec<_> = object_map.into_iter().collect();
 
-        while let Some(((obj_ref, tx_digest), (obj_option, layout_option, authorities))) =
+        while let Some(((obj_ref, _tx_digest), (obj_option, layout_option, authorities))) =
             object_ref_stack.pop()
         {
             let stake: StakeUnit = authorities
@@ -1970,31 +1953,9 @@ where
                 .map(|(name, _)| self.committee.weight(name))
                 .sum();
 
-            let mut is_ok = false;
+            // If we have f+1 stake telling us of the latest version of the object, we just accept
+            // it.
             if stake >= self.committee.validity_threshold() {
-                // If we have f+1 stake telling us of the latest version of the object, we just accept it.
-                is_ok = true;
-            } else if cert_map.contains_key(&tx_digest) {
-                // If we have less stake telling us about the latest state of an object
-                // we re-run the certificate on all authorities to ensure it is correct.
-                if let Ok(effects) = self
-                    .process_certificate(cert_map[&tx_digest].clone().into())
-                    .await
-                {
-                    if effects.effects.is_object_mutated_here(obj_ref) {
-                        is_ok = true;
-                    } else {
-                        // TODO: Throw a byzantine fault here
-                        error!(
-                            ?object_id,
-                            ?tx_digest,
-                            "get_object_info_execute. Byzantine failure!"
-                        );
-                        continue;
-                    }
-                }
-            }
-            if is_ok {
                 match obj_option {
                     Some(obj) => {
                         return Ok(ObjectRead::Exists(obj_ref, obj, layout_option));

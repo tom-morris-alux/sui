@@ -173,7 +173,7 @@ curl --location --request POST '127.0.0.1:9000' \
     {"MoveModule":{"package":"0x2", "module":"devnet_nft"}},
     null,
     null,
-    "Descending"
+    true
   ]
 }'
 ```
@@ -186,6 +186,10 @@ curl --location --request POST '127.0.0.1:9000' \
             {
                 "timestamp": 1666699837426,
                 "txDigest": "cZXsToU6r0Uia6HIAwvr1eMlGsrg6b9+2oYZAskJ0wc=",
+                "id": {
+                    "txSeq": 1001,
+                    "eventSeq": 1,
+                },
                 "event": {
                     "moveEvent": {
                         "packageId": "0x0000000000000000000000000000000000000002",
@@ -204,6 +208,10 @@ curl --location --request POST '127.0.0.1:9000' \
             {
                 "timestamp": 1666699837426,
                 "txDigest": "cZXsToU6r0Uia6HIAwvr1eMlGsrg6b9+2oYZAskJ0wc=",
+                "id": {
+                    "txSeq": 1001,
+                    "eventSeq": 0,
+                },
                 "event": {
                     "newObject": {
                         "packageId": "0x0000000000000000000000000000000000000002",
@@ -219,6 +227,10 @@ curl --location --request POST '127.0.0.1:9000' \
             {
                 "timestamp": 1666698739180,
                 "txDigest": "WF2V6FM6y/kpAgRqzsQmR/osy4pmTgVVbE6qvSJxWh4=",
+                "id": {
+                    "txSeq": 998,
+                    "eventSeq": 1,
+                },
                 "event": {
                     "moveEvent": {
                         "packageId": "0x0000000000000000000000000000000000000002",
@@ -237,6 +249,10 @@ curl --location --request POST '127.0.0.1:9000' \
             {
                 "timestamp": 1666698739180,
                 "txDigest": "WF2V6FM6y/kpAgRqzsQmR/osy4pmTgVVbE6qvSJxWh4=",
+                "id": {
+                    "txSeq": 998,
+                    "eventSeq": 0,
+                },
                 "event": {
                     "newObject": {
                         "packageId": "0x0000000000000000000000000000000000000002",
@@ -282,6 +298,10 @@ curl --location --request POST '127.0.0.1:9000' \
             {
                 "timestamp": 1666699837426,
                 "txDigest": "cZXsToU6r0Uia6HIAwvr1eMlGsrg6b9+2oYZAskJ0wc=",
+                "id": {
+                    "txSeq": 1001,
+                    "eventSeq": 1,
+                },
                 "event": {
                     "moveEvent": {
                         "packageId": "0x0000000000000000000000000000000000000002",
@@ -300,6 +320,10 @@ curl --location --request POST '127.0.0.1:9000' \
             {
                 "timestamp": 1666698739180,
                 "txDigest": "WF2V6FM6y/kpAgRqzsQmR/osy4pmTgVVbE6qvSJxWh4=",
+                "id": {
+                    "txSeq": 998,
+                    "eventSeq": 1,
+                },
                 "event": {
                     "moveEvent": {
                         "packageId": "0x0000000000000000000000000000000000000002",
@@ -348,6 +372,10 @@ curl --location --request POST '127.0.0.1:9000' \
             {
                 "timestamp": 1666698739180,
                 "txDigest": "WF2V6FM6y/kpAgRqzsQmR/osy4pmTgVVbE6qvSJxWh4=",
+                "id": {
+                    "txSeq": 998,
+                    "eventSeq": 0,
+                },
                 "event": {
                     "newObject": {
                         "packageId": "0x0000000000000000000000000000000000000002",
@@ -363,6 +391,10 @@ curl --location --request POST '127.0.0.1:9000' \
             {
                 "timestamp": 1666698739180,
                 "txDigest": "WF2V6FM6y/kpAgRqzsQmR/osy4pmTgVVbE6qvSJxWh4=",
+                "id": {
+                    "txSeq": 998,
+                    "eventSeq": 1,
+                },
                 "event": {
                     "moveEvent": {
                         "packageId": "0x0000000000000000000000000000000000000002",
@@ -411,8 +443,8 @@ relevant to the client.
 | Module         | Move module name                                                 |                      MoveEvent<br/>TransferObject<br/>DeleteObject<br/>NewObject                       |                     `{"Module":"devnet_nft"}`                     |
 | MoveEventType  | Move event type defined in the move code                         |                                               MoveEvent                                                |        `{"MoveEventType":"0x2::devnet_nft::MintNFTEvent"}`        |
 | MoveEventField | Filter using the data fields in the move event object            |                                               MoveEvent                                                |   `{"MoveEventField":{ "path":"/name", "value":"Example NFT"}}`   |
-| SenderAddress  | Address that started the transaction                             |                MoveEvent<br/>Publish<br/>TzansferObject<br/>DeleteObject<br/>NewObject                 | `{"SenderAddress": "0x70613f4f17ae1363f7a7e7251daab5c5b06f68c1"}` |
-| EventType      | Type of event described in the [Events](#type-of-events) section | MoveEvent<br/>Publish<br/>TransferObject<br/>DeleteObject<br/>NewObject<br/>EpochChange<br/>Checkpoint |                     `"{EventType":"Publish"}`                     |
+| SenderAddress  | Address that started the transaction                             |                MoveEvent<br/>Publish<br/>TransferObject<br/>DeleteObject<br/>NewObject                 | `{"SenderAddress": "0x70613f4f17ae1363f7a7e7251daab5c5b06f68c1"}` |
+| EventType      | Type of event described in the [Events](#type-of-events) section | MoveEvent<br/>Publish<br/>TransferObject<br/>DeleteObject<br/>NewObject<br/>EpochChange<br/>Checkpoint |                     `{"EventType":"Publish"}`                     |
 | ObjectId       | Object ID                                                        |                             TransferObject<br/>DeleteObject<br/>NewObject                              |    `{"ObjectId":"0xe3a6bc7bf1dba4d17a91724009c461bd69870719"}`    |
 
 ### Combining filters

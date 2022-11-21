@@ -1,5 +1,32 @@
 # @mysten/sui.js
 
+## 0.17.1
+
+### Patch Changes
+
+- 623505886: Fix callArg serialization bug in LocalTxnSerializer
+
+## 0.17.0
+
+### Minor Changes
+
+- a9602e533: Remove deprecated events API
+- db22728c1: \* adds dryRunTransaction support
+  - adds getGasCostEstimation to the signer-with-provider that estimates the gas cost for a transaction
+- 3b510d0fc: adds coin transfer method to framework that uses pay and paySui
+
+## 0.16.0
+
+### Minor Changes
+
+- 01989d3d5: Remove usage of Buffer within SDK
+- 5e20e6569: Event query pagination and merge all getEvents\* methods
+
+### Patch Changes
+
+- Updated dependencies [1a0968636]
+  - @mysten/bcs@0.5.0
+
 ## 0.15.0
 
 ### Minor Changes

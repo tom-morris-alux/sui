@@ -60,6 +60,7 @@ use sui_json_rpc_types::{
 use sui_types::error::SuiError::ObjectLockConflict;
 
 use crate::epoch::committee_store::CommitteeStore;
+use sui_config::genesis::Genesis;
 use tap::TapFallible;
 
 #[cfg(test)]
@@ -185,7 +186,7 @@ pub struct GatewayState<A> {
 
 impl<A> GatewayState<A> {
     /// Create a new manager which stores its managed addresses at `path`
-    pub fn new(
+    pub async fn new(
         base_path: &Path,
         committee: Committee,
         authority_clients: BTreeMap<AuthorityName, A>,
@@ -195,7 +196,14 @@ impl<A> GatewayState<A> {
         let gateway_metrics = GatewayMetrics::new(prometheus_registry);
         let auth_agg_metrics = AuthAggMetrics::new(prometheus_registry);
         let safe_client_metrics = Arc::new(SafeClientMetrics::new(prometheus_registry));
-        let gateway_store = Arc::new(GatewayStore::open(&base_path.join("store"), None)?);
+        let gateway_store = Arc::new(
+            GatewayStore::open(
+                &base_path.join("store"),
+                None,
+                &Genesis::get_default_genesis(),
+            )
+            .await?,
+        );
         let committee_store = Arc::new(CommitteeStore::new(
             base_path.join("epochs"),
             &committee,
@@ -253,7 +261,7 @@ impl<A> GatewayState<A> {
 }
 
 impl GatewayState<NetworkAuthorityClient> {
-    pub fn create_client(
+    pub async fn create_client(
         config: &GatewayConfig,
         prometheus_registry: Option<&Registry>,
     ) -> Result<GatewayClient, anyhow::Error> {
@@ -268,13 +276,16 @@ impl GatewayState<NetworkAuthorityClient> {
             network_metrics.clone(),
         );
 
-        Ok(Arc::new(GatewayState::new(
-            &config.db_folder_path,
-            committee,
-            authority_clients,
-            prometheus_registry,
-            network_metrics,
-        )?))
+        Ok(Arc::new(
+            GatewayState::new(
+                &config.db_folder_path,
+                committee,
+                authority_clients,
+                prometheus_registry,
+                network_metrics,
+            )
+            .await?,
+        ))
     }
 }
 
@@ -682,14 +693,14 @@ where
 
         debug!(
             tx_digest = ?tx_digest,
-            ?effects.effects,
+            effects = ?effects.data(),
             "Transaction completed successfully"
         );
 
         // Download the latest content of every mutated object from the authorities.
         let mut mutated_object_kinds = BTreeMap::new();
         let mut mutated_object_refs = BTreeSet::new();
-        for (obj_ref, _, kind) in effects.effects.all_mutated() {
+        for (obj_ref, _, kind) in effects.data().all_mutated() {
             mutated_object_kinds.insert(obj_ref.0, kind);
             mutated_object_refs.insert(*obj_ref);
         }
@@ -712,7 +723,7 @@ where
                 mutated_objects_with_kind,
                 new_certificate.clone(),
                 seq,
-                effects.clone().to_unsigned_effects(),
+                effects.clone().into_unsigned(),
                 effects.digest(),
             )
             .await?;
@@ -794,7 +805,7 @@ where
             .execute_transaction_impl_inner(input_objects, transaction)
             .await
             .tap_ok(|(_, effects)| {
-                if effects.effects.shared_objects.len() > 1 {
+                if effects.data().shared_objects.len() > 1 {
                     self.metrics.shared_obj_tx.inc();
                 }
             });
@@ -1379,7 +1390,7 @@ where
 
                         // Okay to unwrap() since we checked that this is Ok
                         let (certificate, effects) = res.unwrap();
-                        let effects = effects.effects;
+                        let effects = effects.into_data();
 
                         debug!(?tx_digest, "Transaction succeeded");
                         (certificate, effects)

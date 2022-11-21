@@ -3,6 +3,7 @@
 
 //! SQL and SQLite-based Event Store
 
+use core::time::Duration;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::path::Path;
@@ -115,13 +116,42 @@ impl SqlEventStore {
             .journal_mode(SqliteJournalMode::Wal)
             // Normal vs Full sync mode also speeds up writes
             .synchronous(SqliteSynchronous::Normal)
+            // Minimal journal size and frequent autocheckpoints help prevent giant WALs
+            .pragma("journal_size_limit", "0")
+            .pragma("wal_autocheckpoint", "400") // In pages of 4KB each
             .create_if_missing(true);
         options.log_statements(log::LevelFilter::Off);
         let pool = SqlitePool::connect_with(options)
             .await
             .map_err(convert_sqlx_err)?;
         info!(?db_path, "Created/opened SQLite EventStore on disk");
+
         Ok(Self { pool })
+    }
+
+    /// Starts a WAL truncation/cleanup periodic task at interval duration
+    pub async fn wal_cleanup_thread(&self, wal_cleanup_interval: Option<Duration>) {
+        if let Some(cleanup_interval) = wal_cleanup_interval {
+            let mut interval = tokio::time::interval(cleanup_interval);
+            loop {
+                interval.tick().await;
+                info!("Running SQLite WAL truncation...");
+                let _ = self.force_wal_truncation().await.map_err(|e| {
+                    warn!("Unable to truncate Event Store SQLite WAL: {}", e);
+                });
+            }
+        }
+    }
+
+    /// Force the SQLite WAL to be truncated.  This mighyt be occasionally necessary if somehow the WAL
+    /// grows too big.
+    #[instrument(level = "debug", skip_all, err)]
+    pub async fn force_wal_truncation(&self) -> Result<(), SuiError> {
+        self.pool
+            .execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            .await
+            .map_err(convert_sqlx_err)?;
+        Ok(())
     }
 
     /// Initializes the database, creating tables and indexes as needed
@@ -377,8 +407,8 @@ impl EventStore for SqlEventStore {
         let query = get_event_query(vec![], descending);
         let rows = sqlx::query(&query)
             .persistent(true)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
             .bind(limit as i64)
             .map(StoredEvent::from)
             .fetch_all(&self.pool)
@@ -398,8 +428,8 @@ impl EventStore for SqlEventStore {
         let query = get_event_query(vec![("tx_digest", Comparator::Equal)], descending);
         let rows = sqlx::query(&query)
             .persistent(true)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
             .bind(digest.to_bytes())
             .bind(limit as i64)
             .map(StoredEvent::from)
@@ -420,8 +450,8 @@ impl EventStore for SqlEventStore {
         let query = get_event_query(vec![("event_type", Comparator::Equal)], descending);
         let rows = sqlx::query(&query)
             .persistent(true)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
             .bind(event_type as u16)
             .bind(limit as i64)
             .map(StoredEvent::from)
@@ -448,8 +478,8 @@ impl EventStore for SqlEventStore {
             descending,
         );
         let rows = sqlx::query(&query)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
             .bind(start_time as i64)
             .bind(end_time as i64)
             .bind(limit as i64)
@@ -477,8 +507,8 @@ impl EventStore for SqlEventStore {
         );
         let rows = sqlx::query(&query)
             .persistent(true)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
             .bind(module.address().to_vec())
             .bind(module.name().to_string())
             .bind(limit as i64)
@@ -489,6 +519,7 @@ impl EventStore for SqlEventStore {
         Ok(rows)
     }
 
+    /// Possible to give part of the name in the query
     #[instrument(level = "debug", skip_all, err)]
     async fn events_by_move_event_struct_name(
         &self,
@@ -497,13 +528,14 @@ impl EventStore for SqlEventStore {
         limit: usize,
         descending: bool,
     ) -> Result<Vec<StoredEvent>, SuiError> {
-        let query = get_event_query(vec![("move_event_name", Comparator::Equal)], descending);
+        let query = get_event_query(vec![("move_event_name", Comparator::Like)], descending);
+        let comparand = format!("{}%", move_event_struct_name);
         // TODO: duplication: these 10 lines are repetitive (4 times) in this file.
         let rows = sqlx::query(&query)
             .persistent(true)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
-            .bind(move_event_struct_name)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
+            .bind(comparand)
             .bind(limit as i64)
             .map(StoredEvent::from)
             .fetch_all(&self.pool)
@@ -524,8 +556,8 @@ impl EventStore for SqlEventStore {
         let sender_vec = sender.to_vec();
         let rows = sqlx::query(&query)
             .persistent(true)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
             .bind(sender_vec)
             .bind(limit as i64)
             .map(StoredEvent::from)
@@ -550,8 +582,8 @@ impl EventStore for SqlEventStore {
             })?;
         let rows = sqlx::query(&query)
             .persistent(true)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
             .bind(recipient_str)
             .bind(limit as i64)
             .map(StoredEvent::from)
@@ -573,8 +605,8 @@ impl EventStore for SqlEventStore {
         let object_vec = object.to_vec();
         let rows = sqlx::query(&query)
             .persistent(true)
-            .bind(cursor.tx_seq_num)
-            .bind(cursor.event_seq_number)
+            .bind(cursor.tx_seq)
+            .bind(cursor.event_seq)
             .bind(object_vec)
             .bind(limit as i64)
             .map(StoredEvent::from)
@@ -617,6 +649,7 @@ enum Comparator {
     LessThanOrEq,
     MoreThanOrEq,
     LessThan,
+    Like,
 }
 
 impl Display for Comparator {
@@ -626,6 +659,7 @@ impl Display for Comparator {
             Comparator::LessThanOrEq => "<=",
             Comparator::MoreThanOrEq => ">=",
             Comparator::LessThan => "<",
+            Comparator::Like => "LIKE",
         };
         write!(f, "{s}")
     }
@@ -1144,6 +1178,12 @@ mod tests {
         test_queried_event_vs_test_envelope(&events[1], &to_insert[1]);
         assert_eq!(events[0].fields.len(), 2);
         assert_eq!(events[1].fields.len(), 2);
+
+        // Test querying by only part of the name, or just package and module (prefix search)
+        let events = db
+            .events_by_move_event_struct_name("0x2::SUI::", (0, 0).into(), 10, false)
+            .await?;
+        assert_eq!(events.len(), 3);
 
         Ok(())
     }

@@ -302,8 +302,11 @@ pub enum SuiError {
     InvalidTxUpdate,
     #[error("Attempt to re-initialize a transaction lock for objects {:?}.", refs)]
     ObjectLockAlreadyInitialized { refs: Vec<ObjectRef> },
-    #[error("Object {obj_ref:?} lock has not been initialized.")]
-    ObjectLockUninitialized { obj_ref: ObjectRef },
+    #[error("Object {provided_obj_ref:?} is not available for consumption, its current version: {current_version:?}.")]
+    ObjectVersionUnavailableForConsumption {
+        provided_obj_ref: ObjectRef,
+        current_version: SequenceNumber,
+    },
     #[error(
         "Object {obj_ref:?} already locked by a different transaction: {pending_transaction:?}"
     )]
@@ -500,6 +503,9 @@ pub enum SuiError {
 
     #[error("SUI payment transactions use first input coin for gas payment, but found a different gas object.")]
     UnexpectedGasPaymentObject,
+
+    #[error("unknown error: {0}")]
+    Unknown(String),
 }
 
 pub type SuiResult<T = ()> = Result<T, SuiError>;
@@ -570,8 +576,17 @@ impl From<&str> for SuiError {
 
 impl SuiError {
     pub fn indicates_epoch_change(&self) -> bool {
-        matches!(self, SuiError::ValidatorHaltedAtEpochEnd)
-            || matches!(self, SuiError::MissingCommitteeAtEpoch(_))
+        match self {
+            SuiError::QuorumFailedToProcessTransaction { errors, .. }
+            | SuiError::QuorumFailedToExecuteCertificate { errors, .. } => {
+                errors.iter().any(|err| {
+                    matches!(err, SuiError::ValidatorHaltedAtEpochEnd)
+                        || matches!(self, SuiError::MissingCommitteeAtEpoch(_))
+                })
+            }
+            SuiError::ValidatorHaltedAtEpochEnd | SuiError::MissingCommitteeAtEpoch(_) => true,
+            _ => false,
+        }
     }
 }
 

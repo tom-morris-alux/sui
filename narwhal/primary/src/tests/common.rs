@@ -1,7 +1,5 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
-
-use crate::PayloadToken;
 use config::WorkerId;
 use crypto::NetworkKeyPair;
 use std::time::Duration;
@@ -12,11 +10,12 @@ use test_utils::{
     CERTIFICATE_DIGEST_BY_ROUND_CF, HEADERS_CF, PAYLOAD_CF, VOTES_CF,
 };
 use types::{
-    BatchDigest, Certificate, CertificateDigest, Header, HeaderDigest, Round, RoundVoteDigestPair,
+    BatchDigest, Certificate, CertificateDigest, Header, HeaderDigest, Round, VoteInfo,
     WorkerReconfigureMessage, WorkerSynchronizeMessage,
 };
 
 use crypto::PublicKey;
+use storage::PayloadToken;
 use tokio::{task::JoinHandle, time::Instant};
 
 pub fn create_db_stores() -> (
@@ -62,10 +61,10 @@ pub fn create_db_stores() -> (
     )
 }
 
-pub fn create_test_vote_store() -> Store<PublicKey, RoundVoteDigestPair> {
+pub fn create_test_vote_store() -> Store<PublicKey, VoteInfo> {
     // Create a new test store.
     let rocksdb = rocks::open_cf(temp_dir(), None, &[VOTES_CF]).expect("Failed creating database");
-    let votes_map = reopen!(&rocksdb, VOTES_CF;<PublicKey, RoundVoteDigestPair>);
+    let votes_map = reopen!(&rocksdb, VOTES_CF;<PublicKey, VoteInfo>);
     Store::new(votes_map)
 }
 

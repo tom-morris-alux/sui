@@ -32,7 +32,11 @@ async fn create_gateway_state_with_object_basics_ref(
         .collect();
     let (authorities, _, pkg_ref) = init_local_authorities(4, genesis_objects).await;
     let path = tempfile::tempdir().unwrap().into_path();
-    let gateway_store = Arc::new(GatewayStore::open(&path, None).unwrap());
+    let gateway_store = Arc::new(
+        GatewayStore::open(&path, None, &Genesis::get_default_genesis())
+            .await
+            .unwrap(),
+    );
     let gateway = GatewayState::new_with_authorities(
         gateway_store,
         authorities,
@@ -76,7 +80,7 @@ async fn public_transfer_object(
     Ok(result)
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn test_public_transfer_object() {
     let (addr1, key1): (_, AccountKeyPair) = get_key_pair();
     let (addr2, _key2): (_, AccountKeyPair) = get_key_pair();
@@ -165,7 +169,7 @@ async fn test_publish() {
         .unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn test_coin_split() {
     let (addr1, key1): (_, AccountKeyPair) = get_key_pair();
 
@@ -653,7 +657,11 @@ async fn test_multiple_gateways() {
     let path = tempfile::tempdir().unwrap().into_path();
     // gateway2 shares the same set of authorities as gateway1.
     let gateway2 = GatewayState::new_with_authorities(
-        Arc::new(GatewayStore::open(&path, None).unwrap()),
+        Arc::new(
+            GatewayStore::open(&path, None, &Genesis::get_default_genesis())
+                .await
+                .unwrap(),
+        ),
         gateway1.authorities.clone(),
         GatewayMetrics::new_for_tests(),
     )
@@ -698,7 +706,7 @@ async fn test_multiple_gateways() {
     assert!(response.effects.status.is_ok());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn test_batch_transaction() {
     let (addr1, key1): (_, AccountKeyPair) = get_key_pair();
     let (addr2, _key2): (_, AccountKeyPair) = get_key_pair();

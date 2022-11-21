@@ -38,7 +38,6 @@ export function isObjectOwner(obj: any, _argumentName?: string): obj is ObjectOw
                 typeof obj.Shared === "object" ||
                 typeof obj.Shared === "function") &&
             isSuiMoveTypeParameterIndex(obj.Shared.initial_shared_version) as boolean ||
-            obj === "Shared" ||
             obj === "Immutable")
     )
 }
@@ -618,7 +617,11 @@ export function isEventQuery(obj: any, _argumentName?: string): obj is EventQuer
 
 export function isEventId(obj: any, _argumentName?: string): obj is EventId {
     return (
-        typeof obj === "string"
+        (obj !== null &&
+            typeof obj === "object" ||
+            typeof obj === "function") &&
+        isSuiMoveTypeParameterIndex(obj.txSeq) as boolean &&
+        isSuiMoveTypeParameterIndex(obj.eventSeq) as boolean
     )
 }
 
@@ -629,7 +632,7 @@ export function isPaginatedEvents(obj: any, _argumentName?: string): obj is Pagi
             typeof obj === "function") &&
         isSuiEvents(obj.data) as boolean &&
         (obj.nextCursor === null ||
-            isTransactionDigest(obj.nextCursor) as boolean)
+            isEventId(obj.nextCursor) as boolean)
     )
 }
 
@@ -717,6 +720,7 @@ export function isSuiEventEnvelope(obj: any, _argumentName?: string): obj is Sui
             typeof obj === "function") &&
         isSuiMoveTypeParameterIndex(obj.timestamp) as boolean &&
         isTransactionDigest(obj.txDigest) as boolean &&
+        isEventId(obj.id) as boolean &&
         isSuiEvent(obj.event) as boolean
     )
 }
@@ -1479,11 +1483,7 @@ export function isObjectArg(obj: any, _argumentName?: string): obj is ObjectArg 
             (obj !== null &&
                 typeof obj === "object" ||
                 typeof obj === "function") &&
-            isSharedObjectRef(obj.Shared) as boolean ||
-            (obj !== null &&
-                typeof obj === "object" ||
-                typeof obj === "function") &&
-            isTransactionDigest(obj.Shared_Deprecated) as boolean)
+            isSharedObjectRef(obj.Shared) as boolean)
     )
 }
 
