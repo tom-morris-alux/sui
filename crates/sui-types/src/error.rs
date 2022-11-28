@@ -5,7 +5,7 @@
 use crate::{
     base_types::*,
     committee::{EpochId, StakeUnit},
-    messages::ExecutionFailureStatus,
+    messages::{ExecutionFailureStatus, MoveLocation},
     object::Owner,
 };
 use move_binary_format::errors::{Location, PartialVMError, VMError};
@@ -13,6 +13,7 @@ use move_core_types::vm_status::{StatusCode, StatusType};
 use narwhal_executor::SubscriberError;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt::Debug};
+use strum_macros::AsRefStr;
 use thiserror::Error;
 use tonic::Status;
 use typed_store::rocks::TypedStoreError;
@@ -50,7 +51,7 @@ macro_rules! exit_main {
 }
 
 /// Custom error type for Sui.
-#[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize, Error, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Serialize, Deserialize, Error, Hash, AsRefStr)]
 #[allow(clippy::large_enum_variant)]
 pub enum SuiError {
     // Object misuse issues
@@ -319,9 +320,15 @@ pub enum SuiError {
         obj_refs: Vec<ObjectRef>,
         locked_epoch: EpochId,
         new_epoch: EpochId,
+        locked_by_tx: TransactionDigest,
     },
     #[error("{TRANSACTION_NOT_FOUND_MSG_PREFIX} [{:?}].", digest)]
     TransactionNotFound { digest: TransactionDigest },
+    #[error(
+        "Attempt to move to `Executed` state an transaction that has already been executed: {:?}.",
+        digest
+    )]
+    TransactionAlreadyExecuted { digest: TransactionDigest },
     #[error(
         "Could not find the referenced object {:?} at version {:?}.",
         object_id,
@@ -667,11 +674,40 @@ impl From<VMError> for ExecutionError {
                 ExecutionFailureStatus::VMInvariantViolation
             }
             (StatusCode::ABORTED, Some(code), Location::Module(id)) => {
-                ExecutionFailureStatus::MoveAbort(id.to_owned(), code)
+                let offset = error.offsets().first().copied().map(|(f, i)| (f.0, i));
+                debug_assert!(offset.is_some(), "Move should set the location on aborts");
+                let (function, instruction) = offset.unwrap_or((0, 0));
+                ExecutionFailureStatus::MoveAbort(
+                    MoveLocation {
+                        module: id.clone(),
+                        function,
+                        instruction,
+                    },
+                    code,
+                )
             }
             (StatusCode::OUT_OF_GAS, _, _) => ExecutionFailureStatus::InsufficientGas,
-            _ => match error.major_status().status_type() {
-                StatusType::Execution => ExecutionFailureStatus::MovePrimitiveRuntimeError,
+            (_, _, location) => match error.major_status().status_type() {
+                StatusType::Execution => {
+                    debug_assert!(error.major_status() != StatusCode::ABORTED);
+                    let location = match location {
+                        Location::Module(id) => {
+                            let offset = error.offsets().first().copied().map(|(f, i)| (f.0, i));
+                            debug_assert!(
+                                offset.is_some(),
+                                "Move should set the location on all execution errors"
+                            );
+                            let (function, instruction) = offset.unwrap_or((0, 0));
+                            Some(MoveLocation {
+                                module: id.clone(),
+                                function,
+                                instruction,
+                            })
+                        }
+                        _ => None,
+                    };
+                    ExecutionFailureStatus::MovePrimitiveRuntimeError(location)
+                }
                 StatusType::Validation
                 | StatusType::Verification
                 | StatusType::Deserialization

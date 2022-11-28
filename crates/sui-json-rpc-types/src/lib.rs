@@ -500,7 +500,7 @@ impl TryInto<Object> for SuiObject<SuiRawData> {
                         o.has_public_transfer,
                         o.version,
                         o.bcs_bytes,
-                    )
+                    )?
                 })
             }
             SuiRawData::Package(p) => Data::Package(MovePackage::new(p.id, &p.module_map)),
@@ -2303,6 +2303,20 @@ impl SuiEvent {
             },
         })
     }
+
+    pub fn get_event_type(&self) -> String {
+        match self {
+            SuiEvent::MoveEvent { .. } => "MoveEvent".to_string(),
+            SuiEvent::Publish { .. } => "Publish".to_string(),
+            SuiEvent::TransferObject { .. } => "TransferObject".to_string(),
+            SuiEvent::DeleteObject { .. } => "DeleteObject".to_string(),
+            SuiEvent::NewObject { .. } => "NewObject".to_string(),
+            SuiEvent::EpochChange(..) => "EpochChange".to_string(),
+            SuiEvent::Checkpoint(..) => "CheckPoint".to_string(),
+            SuiEvent::CoinBalanceChange { .. } => "CoinBalanceChange".to_string(),
+            SuiEvent::MutateObject { .. } => "MutateObject".to_string(),
+        }
+    }
 }
 
 impl PartialEq<SuiEventEnvelope> for EventEnvelope {
@@ -2584,7 +2598,7 @@ impl From<ObjectInfo> for SuiObjectInfo {
             object_id: info.object_id,
             version: info.version,
             digest: info.digest,
-            type_: info.type_,
+            type_: format!("{}", info.type_),
             owner: info.owner,
             previous_transaction: info.previous_transaction,
         }

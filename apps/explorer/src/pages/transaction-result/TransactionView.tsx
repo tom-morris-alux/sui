@@ -14,6 +14,7 @@ import {
 } from '@mysten/sui.js';
 import cl from 'clsx';
 
+import { ErrorBoundary } from '../../components/error-boundary/ErrorBoundary';
 import {
     eventToDisplay,
     getAddressesLinks,
@@ -251,12 +252,12 @@ function GasAmount({ amount }: { amount: bigint | number }) {
 
     return (
         <div className="flex items-center gap-1 h-full">
-            <div className="text-sui-grey-90 flex items-baseline gap-0.5">
+            <div className="text-gray-90 flex items-baseline gap-0.5">
                 <Text variant="body">{formattedAmount}</Text>
                 <Text variant="subtitleSmall">{symbol}</Text>
             </div>
             <Text variant="bodySmall">
-                <div className="text-sui-grey-65 flex items-center">
+                <div className="text-gray-65 flex items-center">
                     (
                     <div className="flex items-baseline gap-0.5">
                         <div>{amount.toLocaleString()}</div>
@@ -281,11 +282,16 @@ function TransactionView({ txdata }: { txdata: DataType }) {
             ? {
                   coin: {
                       amount: item.amount,
-                      symbol: item?.coinType || null,
+                      coinType: item?.coinType || null,
                   },
               }
             : {}),
     }));
+
+    const [formattedAmount, symbol] = useFormatCoin(
+        txnTransfer?.[0].amount,
+        txnTransfer?.[0].coinType
+    );
 
     const txKindData = formatByTransactionKind(txKindName, txdetails, sender);
 
@@ -466,9 +472,9 @@ function TransactionView({ txdata }: { txdata: DataType }) {
                                 {txnTransfer?.[0].amount ? (
                                     <section className="mb-10">
                                         <StatAmount
-                                            amount={txnTransfer[0].amount}
+                                            amount={formattedAmount}
+                                            symbol={symbol}
                                             date={txdata.timestamp_ms}
-                                            currency={txnTransfer[0].coinType}
                                         />
                                     </section>
                                 ) : (
@@ -484,7 +490,6 @@ function TransactionView({ txdata }: { txdata: DataType }) {
                                     sender={sender}
                                     transferCoin={txnTransfer?.[0].isCoin}
                                     recipients={sendReceiveRecipients}
-                                    data-testid="transaction-sender"
                                 />
                             </section>
 
@@ -508,10 +513,12 @@ function TransactionView({ txdata }: { txdata: DataType }) {
                                         styles.txgridcolspan3,
                                     ])}
                                 >
-                                    <ModulesWrapper
-                                        id={txKindData.objectId?.value}
-                                        data={modules}
-                                    />
+                                    <ErrorBoundary>
+                                        <ModulesWrapper
+                                            id={txKindData.objectId?.value}
+                                            data={modules}
+                                        />
+                                    </ErrorBoundary>
                                 </section>
                             )}
                         </div>

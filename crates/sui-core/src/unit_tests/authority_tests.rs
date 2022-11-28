@@ -131,11 +131,8 @@ async fn construct_shared_object_transaction_with_sequence_number(
 
     let shared_object_id = ObjectID::random();
     let shared_object = {
-        use sui_types::gas_coin::GasCoin;
         use sui_types::object::MoveObject;
-
-        let content = GasCoin::new(shared_object_id, 10);
-        let obj = MoveObject::new_gas_coin(sequence_number, content.to_bcs_bytes());
+        let obj = MoveObject::new_gas_coin(sequence_number, shared_object_id, 10);
         Object::new_move(
             obj,
             Owner::Shared {
@@ -271,13 +268,13 @@ async fn test_handle_transfer_transaction_bad_signature() {
         .unwrap()
         .unwrap();
     assert!(authority_state
-        .get_transaction_lock(&object.compute_object_reference())
+        .get_transaction_lock(&object.compute_object_reference(), 0)
         .await
         .unwrap()
         .is_none());
 
     assert!(authority_state
-        .get_transaction_lock(&object.compute_object_reference())
+        .get_transaction_lock(&object.compute_object_reference(), 0)
         .await
         .unwrap()
         .is_none());
@@ -377,13 +374,13 @@ async fn test_handle_transfer_transaction_unknown_sender() {
         .unwrap()
         .unwrap();
     assert!(authority_state
-        .get_transaction_lock(&object.compute_object_reference())
+        .get_transaction_lock(&object.compute_object_reference(), 0)
         .await
         .unwrap()
         .is_none());
 
     assert!(authority_state
-        .get_transaction_lock(&object.compute_object_reference())
+        .get_transaction_lock(&object.compute_object_reference(), 0)
         .await
         .unwrap()
         .is_none());
@@ -451,12 +448,12 @@ async fn test_handle_transfer_transaction_ok() {
 
     // Check the initial state of the locks
     assert!(authority_state
-        .get_transaction_lock(&(object_id, 0.into(), test_object.digest()))
+        .get_transaction_lock(&(object_id, 0.into(), test_object.digest()), 0)
         .await
         .unwrap()
         .is_none());
     assert!(authority_state
-        .get_transaction_lock(&(object_id, 1.into(), test_object.digest()))
+        .get_transaction_lock(&(object_id, 1.into(), test_object.digest()), 0)
         .await
         .is_err());
 
@@ -471,7 +468,7 @@ async fn test_handle_transfer_transaction_ok() {
         .unwrap()
         .unwrap();
     let pending_confirmation = authority_state
-        .get_transaction_lock(&object.compute_object_reference())
+        .get_transaction_lock(&object.compute_object_reference(), 0)
         .await
         .unwrap()
         .unwrap();
@@ -482,13 +479,13 @@ async fn test_handle_transfer_transaction_ok() {
 
     // Check the final state of the locks
     assert!(authority_state
-        .get_transaction_lock(&(object_id, 0.into(), object.digest()))
+        .get_transaction_lock(&(object_id, 0.into(), object.digest()), 0)
         .await
         .unwrap()
         .is_some());
     assert_eq!(
         authority_state
-            .get_transaction_lock(&(object_id, 0.into(), object.digest()))
+            .get_transaction_lock(&(object_id, 0.into(), object.digest()), 0)
             .await
             .unwrap()
             .as_ref()
@@ -957,7 +954,8 @@ async fn test_handle_confirmation_transaction_bad_sequence_number() {
         let o = sender_object.data.try_as_move_mut().unwrap();
         let old_contents = o.contents().to_vec();
         // update object contents, which will increment the sequence number
-        o.update_contents_and_increment_version(old_contents);
+        o.update_contents_and_increment_version(old_contents)
+            .unwrap();
         authority_state.insert_genesis_object(sender_object).await;
     }
 
@@ -1092,11 +1090,11 @@ async fn test_handle_confirmation_transaction_ok() {
 
     // Check locks are set and archived correctly
     assert!(authority_state
-        .get_transaction_lock(&(object_id, 0.into(), old_account.digest()))
+        .get_transaction_lock(&(object_id, 0.into(), old_account.digest()), 0)
         .await
         .is_err());
     assert!(authority_state
-        .get_transaction_lock(&(object_id, 1.into(), new_account.digest()))
+        .get_transaction_lock(&(object_id, 1.into(), new_account.digest()), 0)
         .await
         .expect("Exists")
         .is_none());
@@ -1168,11 +1166,8 @@ async fn test_handle_certificate_interrupted_retry() {
 
     let shared_object_id = ObjectID::random();
     let shared_object = {
-        use sui_types::gas_coin::GasCoin;
         use sui_types::object::MoveObject;
-
-        let content = GasCoin::new(shared_object_id, 10);
-        let obj = MoveObject::new_gas_coin(OBJECT_START_VERSION, content.to_bcs_bytes());
+        let obj = MoveObject::new_gas_coin(OBJECT_START_VERSION, shared_object_id, 10);
         let owner = Owner::Shared {
             initial_shared_version: obj.version(),
         };
@@ -1774,47 +1769,6 @@ async fn test_genesis_sui_sysmtem_state_object() {
 }
 
 #[tokio::test]
-async fn test_change_epoch_transaction() {
-    let authority_state = init_state().await;
-    let mut committee = (**authority_state.committee.load()).clone();
-    committee.epoch += 1;
-    authority_state.committee.store(Arc::new(committee));
-
-    let signed_tx = VerifiedSignedTransaction::new_change_epoch(
-        1,
-        100,
-        100,
-        0,
-        authority_state.name,
-        &*authority_state.secret,
-    );
-    // Make sure that the raw transaction will never be accepted by the validator.
-    assert_eq!(
-        authority_state
-            .handle_transaction(signed_tx.clone().into_unsigned())
-            .await
-            .unwrap_err(),
-        SuiError::InvalidSystemTransaction
-    );
-    let committee = authority_state.committee.load();
-    let certificate = CertifiedTransaction::new(
-        signed_tx.clone().into_message(),
-        vec![signed_tx.auth_sig().clone()],
-        &committee,
-    )
-    .unwrap()
-    .verify(&committee)
-    .unwrap();
-    let result = authority_state
-        .handle_certificate(&certificate)
-        .await
-        .unwrap();
-    assert!(result.signed_effects.unwrap().into_data().status.is_ok());
-    let sui_system_object = authority_state.get_sui_system_state_object().await.unwrap();
-    assert_eq!(sui_system_object.epoch, 1);
-}
-
-#[tokio::test]
 async fn test_transfer_sui_no_amount() {
     let (sender, sender_key): (_, AccountKeyPair) = get_key_pair();
     let recipient = dbg_addr(2);
@@ -1942,7 +1896,7 @@ async fn test_store_revert_transfer_sui() {
         .unwrap();
 
     let db = &authority_state.database;
-    db.revert_state_update(&tx_digest).unwrap();
+    db.revert_state_update(&tx_digest).await.unwrap();
 
     assert_eq!(
         db.get_object(&gas_object_id).unwrap().unwrap().owner,
@@ -2021,7 +1975,7 @@ async fn test_store_revert_wrap_move_call() {
     let wrapper_v0 = wrap_effects.created[0].0;
 
     let db = &authority_state.database;
-    db.revert_state_update(&wrap_digest).unwrap();
+    db.revert_state_update(&wrap_digest).await.unwrap();
 
     // The wrapped object is unwrapped once again (accessible from storage).
     let object = db.get_object(&object_v0.0).unwrap().unwrap();
@@ -2108,7 +2062,7 @@ async fn test_store_revert_unwrap_move_call() {
 
     let db = &authority_state.database;
 
-    db.revert_state_update(&unwrap_digest).unwrap();
+    db.revert_state_update(&unwrap_digest).await.unwrap();
 
     // The unwrapped object is wrapped once again
     assert!(db.get_object(&object_v0.0).unwrap().is_none());
@@ -2205,7 +2159,7 @@ async fn test_store_revert_add_ofield() {
     assert_eq!(inner.version(), inner_v1.1);
     assert_eq!(inner.owner, Owner::ObjectOwner(field_v0.0.into()));
 
-    db.revert_state_update(&add_digest).unwrap();
+    db.revert_state_update(&add_digest).await.unwrap();
 
     let outer = db.get_object(&outer_v0.0).unwrap().unwrap();
     assert_eq!(outer.version(), outer_v0.1);
@@ -2311,7 +2265,7 @@ async fn test_store_revert_remove_ofield() {
     assert_eq!(inner.owner, Owner::AddressOwner(sender));
     assert_eq!(inner.version(), inner_v2.1);
 
-    db.revert_state_update(&remove_ofield_digest).unwrap();
+    db.revert_state_update(&remove_ofield_digest).await.unwrap();
 
     let outer = db.get_object(&outer_v0.0).unwrap().unwrap();
     assert_eq!(outer.version(), outer_v1.1);
@@ -2715,11 +2669,8 @@ async fn shared_object() {
 
     let shared_object_id = ObjectID::random();
     let shared_object = {
-        use sui_types::gas_coin::GasCoin;
         use sui_types::object::MoveObject;
-
-        let content = GasCoin::new(shared_object_id, 10);
-        let obj = MoveObject::new_gas_coin(OBJECT_START_VERSION, content.to_bcs_bytes());
+        let obj = MoveObject::new_gas_coin(OBJECT_START_VERSION, shared_object_id, 10);
         let owner = Owner::Shared {
             initial_shared_version: obj.version(),
         };
@@ -2792,11 +2743,8 @@ async fn test_consensus_message_processed() {
 
     let shared_object_id = ObjectID::random();
     let shared_object = {
-        use sui_types::gas_coin::GasCoin;
         use sui_types::object::MoveObject;
-
-        let content = GasCoin::new(shared_object_id, 10);
-        let obj = MoveObject::new_gas_coin(OBJECT_START_VERSION, content.to_bcs_bytes());
+        let obj = MoveObject::new_gas_coin(OBJECT_START_VERSION, shared_object_id, 10);
         let owner = Owner::Shared {
             initial_shared_version: obj.version(),
         };

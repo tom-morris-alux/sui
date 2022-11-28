@@ -6,6 +6,7 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 use std::{
     collections::{HashMap, VecDeque},
     pin::Pin,
@@ -16,7 +17,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, Guard};
 use chrono::prelude::*;
 use fastcrypto::traits::KeyPair;
 use move_bytecode_utils::module_cache::SyncModuleCache;
@@ -28,7 +29,7 @@ use move_vm_runtime::{move_vm::MoveVM, native_functions::NativeFunctionTable};
 use parking_lot::RwLock;
 use prometheus::{
     exponential_buckets, register_histogram_with_registry, register_int_counter_with_registry,
-    register_int_gauge_with_registry, Histogram, IntCounter, IntGauge,
+    register_int_gauge_with_registry, Histogram, IntCounter, IntGauge, Registry,
 };
 use tap::TapFallible;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
@@ -52,10 +53,11 @@ use sui_json_rpc_types::{
     type_and_fields_from_move_struct, SuiEvent, SuiEventEnvelope, SuiTransactionEffects,
 };
 use sui_simulator::nondeterministic;
+use sui_storage::write_ahead_log::WriteAheadLog;
 use sui_storage::{
     event_store::{EventStore, EventStoreType, StoredEvent},
     node_sync_store::NodeSyncStore,
-    write_ahead_log::{DBTxGuard, TxGuard, WriteAheadLog},
+    write_ahead_log::{DBTxGuard, TxGuard},
     IndexStore,
 };
 use sui_types::committee::EpochId;
@@ -82,6 +84,7 @@ use sui_types::{
 
 use crate::authority::authority_notifier::TransactionNotifierTicket;
 use crate::authority::authority_notify_read::NotifyRead;
+use crate::authority_aggregator::AuthorityAggregator;
 use crate::checkpoints::CheckpointServiceNotify;
 use crate::consensus_handler::{
     SequencedConsensusTransaction, VerifiedSequencedConsensusTransaction,
@@ -102,6 +105,7 @@ use crate::{
     transaction_streamer::TransactionStreamer,
 };
 use narwhal_types::ConsensusOutput;
+use sui_types::gas::GasCostSummary;
 
 use self::authority_store::ObjectKey;
 
@@ -131,7 +135,8 @@ pub const MAX_ITEMS_LIMIT: u64 = 1_000;
 const BROADCAST_CAPACITY: usize = 10_000;
 
 pub(crate) const MAX_TX_RECOVERY_RETRY: u32 = 3;
-type CertTxGuard<'a> = DBTxGuard<'a, TrustedCertificate>;
+type CertTxGuard<'a> =
+    DBTxGuard<'a, TrustedCertificate, (InnerTemporaryStore, SignedTransactionEffects)>;
 
 pub type ReconfigConsensusMessage = (
     AuthorityKeyPair,
@@ -561,6 +566,7 @@ pub struct AuthorityState {
     reconfig_state_mem: RwLock<ReconfigState>,
 
     /// A channel to tell consensus to reconfigure.
+    /// TODO: This does not really belong to AuthorityState. We should move it out.
     _tx_reconfigure_consensus: mpsc::Sender<ReconfigConsensusMessage>,
 }
 
@@ -588,27 +594,13 @@ impl AuthorityState {
         &self.committee_store
     }
 
+    /// This is a private method and should be kept that way. It doesn't check whether
+    /// the provided transaction is a system transaction, and hence can only be called internally.
     async fn handle_transaction_impl(
         &self,
         transaction: VerifiedTransaction,
     ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
         let transaction_digest = *transaction.digest();
-        // Ensure an idempotent answer.
-        // If a transaction was signed in a previous epoch, we should no longer reuse it.
-        if self
-            .database
-            .transaction_exists(self.epoch(), &transaction_digest)?
-        {
-            self.metrics.tx_already_processed.inc();
-            let transaction_info = self.make_transaction_info(&transaction_digest).await?;
-            return Ok(transaction_info);
-        }
-
-        // Validators should never sign an external system transaction.
-        fp_ensure!(
-            !transaction.is_system_tx(),
-            SuiError::InvalidSystemTransaction
-        );
 
         let (_gas_status, input_objects) = transaction_input_checker::check_transaction_input(
             &self.database,
@@ -639,6 +631,23 @@ impl AuthorityState {
     ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
         let transaction_digest = *transaction.digest();
         debug!(tx_digest=?transaction_digest, "handle_transaction. Tx data: {:?}", transaction.data().data);
+
+        // Ensure an idempotent answer. This is checked before the system_tx check so that
+        // a validator is able to return the signed system tx if it was already signed locally.
+        if self
+            .database
+            .transaction_exists(self.epoch(), &transaction_digest)?
+        {
+            self.metrics.tx_already_processed.inc();
+            return self.make_transaction_info(&transaction_digest).await;
+        }
+
+        // CRITICAL! Validators should never sign an external system transaction.
+        fp_ensure!(
+            !transaction.is_system_tx(),
+            SuiError::InvalidSystemTransaction
+        );
+
         let _metrics_guard = start_timer(self.metrics.handle_transaction_latency.clone());
 
         self.metrics.tx_orders.inc();
@@ -648,14 +657,10 @@ impl AuthorityState {
             Ok(r) => Ok(r),
             // If we see an error, it is possible that a certificate has already been processed.
             // In that case, we could still return Ok to avoid showing confusing errors.
-            Err(err) => {
-                if self.database.effects_exists(&transaction_digest)? {
-                    self.metrics.tx_already_processed.inc();
-                    Ok(self.make_transaction_info(&transaction_digest).await?)
-                } else {
-                    Err(err)
-                }
-            }
+            Err(err) => self
+                .get_tx_info_already_executed(&transaction_digest)
+                .await?
+                .ok_or(err),
         }
     }
 
@@ -766,6 +771,11 @@ impl AuthorityState {
     }
 
     #[instrument(level = "trace", skip_all)]
+    async fn check_owned_locks(&self, owned_object_refs: &[ObjectRef]) -> SuiResult {
+        self.database.check_owned_locks(owned_object_refs).await
+    }
+
+    #[instrument(level = "trace", skip_all)]
     async fn check_shared_locks(
         &self,
         transaction_digest: &TransactionDigest,
@@ -839,6 +849,23 @@ impl AuthorityState {
             });
         }
 
+        // first check to see if we have already executed and committed the tx
+        // to the WAL
+        if let Some((inner_temporary_storage, signed_effects)) = self
+            .database
+            .wal
+            .get_execution_output(certificate.digest())?
+        {
+            return self
+                .commit_cert_and_notify(
+                    certificate,
+                    inner_temporary_storage,
+                    signed_effects,
+                    tx_guard,
+                )
+                .await;
+        }
+
         let digest = *certificate.digest();
         // The cert could have been processed by a concurrent attempt of the same cert, so check if
         // the effects have already been written.
@@ -861,6 +888,29 @@ impl AuthorityState {
                 Ok(res) => res,
             };
 
+        // Write tx output to WAL as first commit phase. In second phase
+        // we write from WAL to permanent storage. The purpose of this scheme
+        // is to allow for retrying phase 2 from phase 1 in the case where we
+        // fail mid-write. We prefer this over making the write to permanent
+        // storage atomic as this allows for sharding storage across nodes, which
+        // would be more difficult in the alternative.
+        self.database.wal.write_execution_output(
+            &digest,
+            (inner_temporary_store.clone(), signed_effects.clone()),
+        )?;
+
+        self.commit_cert_and_notify(certificate, inner_temporary_store, signed_effects, tx_guard)
+            .await
+    }
+
+    async fn commit_cert_and_notify(
+        &self,
+        certificate: &VerifiedCertificate,
+        inner_temporary_store: InnerTemporaryStore,
+        signed_effects: SignedTransactionEffects,
+        tx_guard: CertTxGuard<'_>,
+    ) -> SuiResult<VerifiedTransactionInfoResponse> {
+        let digest = *certificate.digest();
         let input_object_count = inner_temporary_store.objects.len();
         let shared_object_count = signed_effects.data().shared_objects.len();
 
@@ -995,6 +1045,9 @@ impl AuthorityState {
         let _metrics_guard = start_timer(self.metrics.prepare_certificate_latency.clone());
         let (gas_status, input_objects) =
             transaction_input_checker::check_certificate_input(&self.database, certificate).await?;
+
+        let owned_object_refs = input_objects.filter_owned_objects();
+        self.check_owned_locks(&owned_object_refs).await?;
 
         // At this point we need to check if any shared objects need locks,
         // and whether they have them.
@@ -1294,8 +1347,11 @@ impl AuthorityState {
                             // Only address owned objects have locks.
                             None
                         } else {
-                            self.get_transaction_lock(&object.compute_object_reference())
-                                .await?
+                            self.get_transaction_lock(
+                                &object.compute_object_reference(),
+                                self.epoch(),
+                            )
+                            .await?
                         };
                         let layout = match request_layout {
                             Some(format) => {
@@ -1579,8 +1635,12 @@ impl AuthorityState {
         self.database.clone()
     }
 
+    pub fn committee(&self) -> Guard<Arc<Committee>> {
+        self.committee.load()
+    }
+
     pub fn clone_committee(&self) -> Committee {
-        self.committee.load().clone().deref().clone()
+        self.committee().clone().deref().clone()
     }
 
     pub fn get_reconfig_state_read_lock_guard(
@@ -1947,7 +2007,7 @@ impl AuthorityState {
     }
 
     /// Make an information response for a transaction
-    async fn make_transaction_info(
+    pub async fn make_transaction_info(
         &self,
         transaction_digest: &TransactionDigest,
     ) -> Result<VerifiedTransactionInfoResponse, SuiError> {
@@ -2077,13 +2137,15 @@ impl AuthorityState {
     ) -> Result<(), SuiError> {
         self.database.consensus_message_processed_notify(key).await
     }
+
     /// Get a read reference to an object/seq lock
     pub async fn get_transaction_lock(
         &self,
         object_ref: &ObjectRef,
+        epoch_id: EpochId,
     ) -> Result<Option<VerifiedSignedTransaction>, SuiError> {
         self.database
-            .get_object_locking_transaction(object_ref)
+            .get_object_locking_transaction(object_ref, epoch_id)
             .await
     }
 
@@ -2309,5 +2371,73 @@ impl AuthorityState {
             checkpoint_service.notify_checkpoint(index, roots, false)?;
         }
         self.database.record_checkpoint_boundary(round)
+    }
+
+    pub async fn create_advance_epoch_tx_cert(
+        &self,
+        next_epoch: EpochId,
+        gas_cost_summary: &GasCostSummary,
+        timeout: Duration,
+    ) -> anyhow::Result<VerifiedCertificate> {
+        debug!(
+            ?next_epoch,
+            computation_cost=?gas_cost_summary.computation_cost,
+            storage_cost=?gas_cost_summary.storage_cost,
+            storage_rebase=?gas_cost_summary.storage_rebate,
+            "Creating advance epoch transaction"
+        );
+        let tx = VerifiedTransaction::new_change_epoch(
+            next_epoch,
+            gas_cost_summary.storage_cost,
+            gas_cost_summary.computation_cost,
+            gas_cost_summary.storage_rebate,
+        );
+        // If we fail to sign the transaction locally for whatever reason, it's not recoverable.
+        self.handle_transaction_impl(tx.clone()).await?;
+        debug!(?next_epoch, "Successfully signed advance epoch transaction");
+
+        // If constructing network fails, it's not recoverable.
+        let net = AuthorityAggregator::new_from_system_state(
+            &self.database,
+            &self.committee_store,
+            &Registry::new(),
+        )?;
+
+        let result = tokio::time::timeout(timeout, async {
+            loop {
+                // We may have already executed this transaction somewhere else.
+                // If so, no need to try to get it from the network.
+                if let Ok(Some(VerifiedTransactionInfoResponse {
+                    certified_transaction: Some(cert),
+                    ..
+                })) = self.get_tx_info_already_executed(tx.digest()).await
+                {
+                    return cert;
+                }
+                match net.process_transaction(tx.clone()).await {
+                    Ok(cert) => {
+                        return cert;
+                    }
+                    Err(err) => {
+                        debug!("Did not create advance epoch transaction cert: {:?}", err);
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+        .await;
+        match result {
+            Ok(cert) => {
+                debug!(
+                    "Successfully created advance epoch transaction cert: {:?}",
+                    cert
+                );
+                Ok(cert)
+            }
+            Err(err) => {
+                error!("Failed to create advance epoch transaction cert. Giving up");
+                Err(err.into())
+            }
+        }
     }
 }

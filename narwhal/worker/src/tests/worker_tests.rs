@@ -252,6 +252,7 @@ async fn get_network_peers_from_admin_server() {
     let (tx_new_certificates, rx_new_certificates) =
         test_utils::test_new_certificates_channel!(CHANNEL_CAPACITY);
     let (tx_feedback, rx_feedback) = test_utils::test_channel!(CHANNEL_CAPACITY);
+    let (_tx_consensus_round_updates, rx_consensus_round_updates) = watch::channel(0);
     let initial_committee = ReconfigureNotification::NewEpoch(committee.clone());
     let (tx_reconfigure, _rx_reconfigure) = watch::channel(initial_committee);
     let consensus_metrics = Arc::new(ConsensusMetrics::new(&Registry::new()));
@@ -269,8 +270,9 @@ async fn get_network_peers_from_admin_server() {
         store.proposer_store.clone(),
         store.payload_store.clone(),
         store.vote_digest_store.clone(),
-        /* tx_consensus */ tx_new_certificates,
-        /* rx_consensus */ rx_feedback,
+        tx_new_certificates,
+        rx_feedback,
+        rx_consensus_round_updates,
         /* dag */
         Some(Arc::new(
             Dag::new(&committee, rx_new_certificates, consensus_metrics).1,
@@ -364,6 +366,7 @@ async fn get_network_peers_from_admin_server() {
     let (tx_new_certificates_2, rx_new_certificates_2) =
         test_utils::test_new_certificates_channel!(CHANNEL_CAPACITY);
     let (tx_feedback_2, rx_feedback_2) = test_utils::test_channel!(CHANNEL_CAPACITY);
+    let (_tx_consensus_round_updates, rx_consensus_round_updates) = watch::channel(0);
     let initial_committee = ReconfigureNotification::NewEpoch(committee.clone());
     let (tx_reconfigure_2, _rx_reconfigure_2) = watch::channel(initial_committee);
     let consensus_metrics = Arc::new(ConsensusMetrics::new(&Registry::new()));
@@ -381,8 +384,9 @@ async fn get_network_peers_from_admin_server() {
         store.proposer_store.clone(),
         store.payload_store.clone(),
         store.vote_digest_store.clone(),
-        /* tx_consensus */ tx_new_certificates_2,
-        /* rx_consensus */ rx_feedback_2,
+        tx_new_certificates_2,
+        rx_feedback_2,
+        rx_consensus_round_updates,
         /* dag */
         Some(Arc::new(
             Dag::new(&committee, rx_new_certificates_2, consensus_metrics).1,
@@ -485,29 +489,27 @@ async fn get_network_peers_from_admin_server() {
     assert!(expected_peer_ids.iter().all(|e| resp.contains(e)));
 
     // Assert network connectivity metrics are also set as expected
-    let mut m = std::collections::HashMap::new();
-    m.insert("peer_id", resp.get(0).unwrap().as_str());
-    assert_eq!(
-        1,
-        metrics_2
-            .clone()
-            .network_connection_metrics
-            .unwrap()
-            .network_peer_connected
-            .get_metric_with(&m)
-            .unwrap()
-            .get()
-    );
+    let filters = vec![
+        (primary_2_peer_id.as_str(), "our_primary"),
+        (primary_1_peer_id.as_str(), "other_primary"),
+        (worker_1_peer_id.as_str(), "other_worker"),
+    ];
 
-    m.insert("peer_id", resp.get(1).unwrap().as_str());
-    assert_eq!(
-        1,
-        metrics_2
-            .network_connection_metrics
-            .unwrap()
-            .network_peer_connected
-            .get_metric_with(&m)
-            .unwrap()
-            .get()
-    );
+    for f in filters {
+        let mut m = HashMap::new();
+        m.insert("peer_id", f.0);
+        m.insert("type", f.1);
+
+        assert_eq!(
+            1,
+            metrics_2
+                .clone()
+                .network_connection_metrics
+                .unwrap()
+                .network_peer_connected
+                .get_metric_with(&m)
+                .unwrap()
+                .get()
+        );
+    }
 }

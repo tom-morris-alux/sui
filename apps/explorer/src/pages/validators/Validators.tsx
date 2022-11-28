@@ -11,9 +11,9 @@ import {
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
+import { ErrorBoundary } from '../../components/error-boundary/ErrorBoundary';
 import ErrorResult from '../../components/error-result/ErrorResult';
 import Longtext from '../../components/longtext/Longtext';
-import TabFooter from '../../components/tabs/TabFooter';
 import { STATE_DEFAULT } from '../../components/top-validators-card/TopValidatorsCard';
 import theme from '../../styles/theme.module.css';
 import { IS_STATIC_ENV } from '../../utils/envUtil';
@@ -155,15 +155,6 @@ export function processValidators(set: Validator[]) {
         .sort((a, b) => (a.name > b.name ? 1 : -1));
 }
 
-export function getTabFooter(count: number) {
-    return {
-        stats: {
-            count: count,
-            stats_text: 'total validators',
-        },
-    };
-}
-
 function ValidatorsPage({ state }: { state: ValidatorState }) {
     const validatorsData = processValidators(
         state.validators.fields.active_validators
@@ -213,15 +204,12 @@ function ValidatorsPage({ state }: { state: ValidatorState }) {
                 Validators
             </Heading>
             <div className="mt-8">
-                <TableCard data={tableData.data} columns={tableData.columns} />
-                <TabFooter stats={getTabFooter(validatorsData.length).stats}>
-                    <Longtext
-                        text=""
-                        category="validators"
-                        isLink={false}
-                        alttext=""
+                <ErrorBoundary>
+                    <TableCard
+                        data={tableData.data}
+                        columns={tableData.columns}
                     />
-                </TabFooter>
+                </ErrorBoundary>
             </div>
         </div>
     );

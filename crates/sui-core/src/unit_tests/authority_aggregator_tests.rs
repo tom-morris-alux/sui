@@ -111,6 +111,7 @@ pub async fn init_local_authorities(
             network_address: sui_config::utils::new_network_address(),
             narwhal_primary_address: sui_config::utils::new_network_address(),
             narwhal_worker_address: sui_config::utils::new_network_address(),
+            narwhal_internal_worker_address: None,
             narwhal_consensus_address: sui_config::utils::new_network_address(),
         };
         let pop = generate_proof_of_possession(&key_pair, (&account_key_pair.public()).into());
@@ -1405,6 +1406,7 @@ pub fn make_response_from_sui_system_state(
             SequenceNumber::from_u64(1),
             move_content,
         )
+        .unwrap()
     };
     let initial_shared_version = move_object.version();
     let object = Object::new_move(

@@ -23,8 +23,9 @@ aes-gcm = { version = "0.10", features = ["aes", "alloc", "getrandom"] }
 ahash = { version = "0.7", features = ["std"] }
 aho-corasick = { version = "0.7", features = ["std"] }
 aliasable = { version = "0.1", features = ["alloc"] }
-anemo = { git = "https://github.com/mystenlabs/anemo.git", rev = "87d60b249a9954775a95790e3bc9ca1a0df7969f", default-features = false }
-anemo-tower = { git = "https://github.com/mystenlabs/anemo.git", rev = "87d60b249a9954775a95790e3bc9ca1a0df7969f", default-features = false }
+anemo = { git = "https://github.com/mystenlabs/anemo.git", rev = "74bbe807bdd4ac4d58c2aba12adc33ea1a2bc608", default-features = false }
+anemo-tower = { git = "https://github.com/mystenlabs/anemo.git", rev = "74bbe807bdd4ac4d58c2aba12adc33ea1a2bc608", default-features = false }
+anes = { version = "0.1" }
 ansi_term = { version = "0.12", default-features = false }
 anyhow = { version = "1", features = ["backtrace", "std"] }
 arc-swap = { version = "1", default-features = false, features = ["serde"] }
@@ -99,8 +100,11 @@ cast = { version = "0.3", default-features = false }
 cbc = { version = "0.1", features = ["alloc", "block-padding", "std"] }
 cfg-expr = { version = "0.12", features = ["target-lexicon", "targets"] }
 cfg-if = { version = "1", default-features = false }
-chrono = { version = "0.4", features = ["clock", "iana-time-zone", "js-sys", "oldtime", "std", "time", "wasm-bindgen", "wasmbind", "winapi"] }
+chrono = { version = "0.4", features = ["clock", "iana-time-zone", "js-sys", "oldtime", "serde", "std", "time", "wasm-bindgen", "wasmbind", "winapi"] }
 chrono-tz = { version = "0.6", features = ["std"] }
+ciborium = { version = "0.2", features = ["std"] }
+ciborium-io = { version = "0.2", default-features = false, features = ["alloc", "std"] }
+ciborium-ll = { version = "0.2", default-features = false }
 cipher = { version = "0.4", default-features = false, features = ["alloc", "block-padding", "std"] }
 clap-f595c2ba2a3f28df = { package = "clap", version = "2", features = ["ansi_term", "atty", "color", "strsim", "suggestions", "vec_map"] }
 clap-7b89eefb6aaa9bf3 = { package = "clap", version = "3", features = ["atty", "clap_derive", "color", "derive", "once_cell", "std", "strsim", "suggestions", "termcolor"] }
@@ -119,13 +123,16 @@ console = { version = "0.15", default-features = false, features = ["ansi-parsin
 console-api = { version = "0.4", default-features = false, features = ["transport"] }
 console-subscriber = { version = "0.1", features = ["env-filter"] }
 const-oid = { version = "0.9", default-features = false }
-constant_time_eq = { version = "0.1", default-features = false }
+constant_time_eq-c65f7effa3be6d31 = { package = "constant_time_eq", version = "0.1", default-features = false }
+constant_time_eq-6f8ce4dd05d13bba = { package = "constant_time_eq", version = "0.2", default-features = false }
 core2 = { version = "0.4", default-features = false, features = ["alloc"] }
 crc = { version = "3", default-features = false }
 crc-catalog = { version = "2", default-features = false }
 crc32fast = { version = "1", features = ["std"] }
 criterion-468e82937335b1c9 = { package = "criterion", version = "0.3", features = ["async", "async_tokio", "cargo_bench_support", "futures", "tokio"] }
+criterion-9fbad63c4bcf4a8f = { package = "criterion", version = "0.4", features = ["cargo_bench_support", "plotters", "rayon"] }
 criterion-plot-9fbad63c4bcf4a8f = { package = "criterion-plot", version = "0.4", default-features = false }
+criterion-plot-d8f496e17d97b5cb = { package = "criterion-plot", version = "0.5", default-features = false }
 crossbeam = { version = "0.8", features = ["alloc", "crossbeam-channel", "crossbeam-deque", "crossbeam-epoch", "crossbeam-queue", "std"] }
 crossbeam-channel = { version = "0.5", features = ["crossbeam-utils", "std"] }
 crossbeam-deque = { version = "0.8", features = ["crossbeam-epoch", "crossbeam-utils", "std"] }
@@ -156,6 +163,7 @@ derive_builder = { version = "0.11", features = ["std"] }
 determinator = { version = "0.10", default-features = false }
 deunicode = { version = "0.4", default-features = false }
 dhat = { version = "0.3", default-features = false }
+diesel = { version = "2", features = ["32-column-tables", "bitflags", "byteorder", "chrono", "itoa", "postgres", "postgres_backend", "pq-sys", "serde_json", "with-deprecated"] }
 diff = { version = "0.1", default-features = false }
 difference = { version = "2" }
 difflib = { version = "0.4", default-features = false }
@@ -411,7 +419,9 @@ plotters = { version = "0.3", default-features = false, features = ["area_series
 plotters-backend = { version = "0.3", default-features = false }
 plotters-svg = { version = "0.3", default-features = false }
 polyval = { version = "0.6", default-features = false }
+portable-atomic = { version = "0.3", features = ["fallback"] }
 ppv-lite86 = { version = "0.2", default-features = false, features = ["simd", "std"] }
+pq-sys = { version = "0.4", default-features = false }
 predicates = { version = "2", features = ["diff", "difflib", "float-cmp", "normalize-line-endings", "regex"] }
 predicates-core = { version = "1", default-features = false }
 predicates-tree = { version = "1", default-features = false }
@@ -548,7 +558,8 @@ test-fuzz = { version = "3", default-features = false }
 test-fuzz-internal = { version = "3", default-features = false }
 test-fuzz-runtime = { version = "3", default-features = false }
 textwrap-a6292c17cd707f01 = { package = "textwrap", version = "0.11", default-features = false }
-textwrap-3575ec1268b04181 = { package = "textwrap", version = "0.15", features = ["smawk", "unicode-linebreak", "unicode-width"] }
+textwrap-3575ec1268b04181 = { package = "textwrap", version = "0.15", default-features = false }
+textwrap-986da7b5efc2b80e = { package = "textwrap", version = "0.16", features = ["smawk", "unicode-linebreak", "unicode-width"] }
 thiserror = { version = "1", default-features = false }
 thousands = { version = "0.2", default-features = false }
 thread_local = { version = "1", default-features = false }
@@ -649,9 +660,10 @@ aes-gcm = { version = "0.10", features = ["aes", "alloc", "getrandom"] }
 ahash = { version = "0.7", features = ["std"] }
 aho-corasick = { version = "0.7", features = ["std"] }
 aliasable = { version = "0.1", features = ["alloc"] }
-anemo = { git = "https://github.com/mystenlabs/anemo.git", rev = "87d60b249a9954775a95790e3bc9ca1a0df7969f", default-features = false }
-anemo-build = { git = "https://github.com/mystenlabs/anemo.git", rev = "87d60b249a9954775a95790e3bc9ca1a0df7969f", default-features = false }
-anemo-tower = { git = "https://github.com/mystenlabs/anemo.git", rev = "87d60b249a9954775a95790e3bc9ca1a0df7969f", default-features = false }
+anemo = { git = "https://github.com/mystenlabs/anemo.git", rev = "74bbe807bdd4ac4d58c2aba12adc33ea1a2bc608", default-features = false }
+anemo-build = { git = "https://github.com/mystenlabs/anemo.git", rev = "74bbe807bdd4ac4d58c2aba12adc33ea1a2bc608", default-features = false }
+anemo-tower = { git = "https://github.com/mystenlabs/anemo.git", rev = "74bbe807bdd4ac4d58c2aba12adc33ea1a2bc608", default-features = false }
+anes = { version = "0.1" }
 ansi_term = { version = "0.12", default-features = false }
 anyhow = { version = "1", features = ["backtrace", "std"] }
 arc-swap = { version = "1", default-features = false, features = ["serde"] }
@@ -740,9 +752,12 @@ cc = { version = "1", default-features = false, features = ["jobserver", "parall
 cexpr = { version = "0.6", default-features = false }
 cfg-expr = { version = "0.12", features = ["target-lexicon", "targets"] }
 cfg-if = { version = "1", default-features = false }
-chrono = { version = "0.4", features = ["clock", "iana-time-zone", "js-sys", "oldtime", "std", "time", "wasm-bindgen", "wasmbind", "winapi"] }
+chrono = { version = "0.4", features = ["clock", "iana-time-zone", "js-sys", "oldtime", "serde", "std", "time", "wasm-bindgen", "wasmbind", "winapi"] }
 chrono-tz = { version = "0.6", features = ["std"] }
 chrono-tz-build = { version = "0.0.3", default-features = false }
+ciborium = { version = "0.2", features = ["std"] }
+ciborium-io = { version = "0.2", default-features = false, features = ["alloc", "std"] }
+ciborium-ll = { version = "0.2", default-features = false }
 cipher = { version = "0.4", default-features = false, features = ["alloc", "block-padding", "std"] }
 clang-sys = { version = "1", default-features = false, features = ["clang_3_5", "clang_3_6", "clang_3_7", "clang_3_8", "clang_3_9", "clang_4_0", "clang_5_0", "clang_6_0", "libloading", "runtime"] }
 clap-f595c2ba2a3f28df = { package = "clap", version = "2", features = ["ansi_term", "atty", "color", "strsim", "suggestions", "vec_map"] }
@@ -764,13 +779,17 @@ console = { version = "0.15", default-features = false, features = ["ansi-parsin
 console-api = { version = "0.4", default-features = false, features = ["transport"] }
 console-subscriber = { version = "0.1", features = ["env-filter"] }
 const-oid = { version = "0.9", default-features = false }
-constant_time_eq = { version = "0.1", default-features = false }
+constant_time_eq-c65f7effa3be6d31 = { package = "constant_time_eq", version = "0.1", default-features = false }
+constant_time_eq-6f8ce4dd05d13bba = { package = "constant_time_eq", version = "0.2", default-features = false }
+convert_case = { version = "0.4", default-features = false }
 core2 = { version = "0.4", default-features = false, features = ["alloc"] }
 crc = { version = "3", default-features = false }
 crc-catalog = { version = "2", default-features = false }
 crc32fast = { version = "1", features = ["std"] }
 criterion-468e82937335b1c9 = { package = "criterion", version = "0.3", features = ["async", "async_tokio", "cargo_bench_support", "futures", "tokio"] }
+criterion-9fbad63c4bcf4a8f = { package = "criterion", version = "0.4", features = ["cargo_bench_support", "plotters", "rayon"] }
 criterion-plot-9fbad63c4bcf4a8f = { package = "criterion-plot", version = "0.4", default-features = false }
+criterion-plot-d8f496e17d97b5cb = { package = "criterion-plot", version = "0.5", default-features = false }
 crossbeam = { version = "0.8", features = ["alloc", "crossbeam-channel", "crossbeam-deque", "crossbeam-epoch", "crossbeam-queue", "std"] }
 crossbeam-channel = { version = "0.5", features = ["crossbeam-utils", "std"] }
 crossbeam-deque = { version = "0.8", features = ["crossbeam-epoch", "crossbeam-utils", "std"] }
@@ -806,9 +825,12 @@ derive-syn-parse = { version = "0.1", default-features = false }
 derive_builder = { version = "0.11", features = ["std"] }
 derive_builder_core = { version = "0.11", default-features = false }
 derive_builder_macro = { version = "0.11", default-features = false }
+derive_more = { version = "0.99", features = ["add", "add_assign", "as_mut", "as_ref", "constructor", "convert_case", "deref", "deref_mut", "display", "error", "from", "from_str", "index", "index_mut", "into", "into_iterator", "is_variant", "iterator", "mul", "mul_assign", "not", "rustc_version", "sum", "try_into", "unwrap"] }
 determinator = { version = "0.10", default-features = false }
 deunicode = { version = "0.4", default-features = false }
 dhat = { version = "0.3", default-features = false }
+diesel = { version = "2", features = ["32-column-tables", "bitflags", "byteorder", "chrono", "itoa", "postgres", "postgres_backend", "pq-sys", "serde_json", "with-deprecated"] }
+diesel_derives = { version = "2", features = ["32-column-tables", "postgres", "with-deprecated"] }
 diff = { version = "0.1", default-features = false }
 difference = { version = "2" }
 difflib = { version = "0.4", default-features = false }
@@ -1096,7 +1118,9 @@ plotters = { version = "0.3", default-features = false, features = ["area_series
 plotters-backend = { version = "0.3", default-features = false }
 plotters-svg = { version = "0.3", default-features = false }
 polyval = { version = "0.6", default-features = false }
+portable-atomic = { version = "0.3", features = ["fallback"] }
 ppv-lite86 = { version = "0.2", default-features = false, features = ["simd", "std"] }
+pq-sys = { version = "0.4", default-features = false }
 predicates = { version = "2", features = ["diff", "difflib", "float-cmp", "normalize-line-endings", "regex"] }
 predicates-core = { version = "1", default-features = false }
 predicates-tree = { version = "1", default-features = false }
@@ -1115,7 +1139,7 @@ proptest-derive = { version = "0.3", default-features = false }
 prost-93f6ce9d446188ac = { package = "prost", version = "0.10", features = ["prost-derive", "std"] }
 prost-a6292c17cd707f01 = { package = "prost", version = "0.11", features = ["prost-derive", "std"] }
 prost-build-93f6ce9d446188ac = { package = "prost-build", version = "0.10" }
-prost-build-a6292c17cd707f01 = { package = "prost-build", version = "0.11" }
+prost-build-a6292c17cd707f01 = { package = "prost-build", version = "0.11", features = ["format", "prettyplease", "syn"] }
 prost-derive-93f6ce9d446188ac = { package = "prost-derive", version = "0.10", default-features = false }
 prost-derive-a6292c17cd707f01 = { package = "prost-derive", version = "0.11", default-features = false }
 prost-types-93f6ce9d446188ac = { package = "prost-types", version = "0.10", default-features = false }
@@ -1265,7 +1289,8 @@ test-fuzz-internal = { version = "3", default-features = false }
 test-fuzz-macro = { version = "3", default-features = false }
 test-fuzz-runtime = { version = "3", default-features = false }
 textwrap-a6292c17cd707f01 = { package = "textwrap", version = "0.11", default-features = false }
-textwrap-3575ec1268b04181 = { package = "textwrap", version = "0.15", features = ["smawk", "unicode-linebreak", "unicode-width"] }
+textwrap-3575ec1268b04181 = { package = "textwrap", version = "0.15", default-features = false }
+textwrap-986da7b5efc2b80e = { package = "textwrap", version = "0.16", features = ["smawk", "unicode-linebreak", "unicode-width"] }
 thiserror = { version = "1", default-features = false }
 thiserror-impl = { version = "1", default-features = false }
 thousands = { version = "0.2", default-features = false }
@@ -1378,16 +1403,10 @@ zeroize_derive = { version = "1", default-features = false }
 zstd-sys = { version = "2", features = ["legacy", "zdict_builder"] }
 
 [target.aarch64-apple-darwin.dependencies]
-anes = { version = "0.1" }
-ciborium = { version = "0.2", features = ["std"] }
-ciborium-io = { version = "0.2", default-features = false, features = ["alloc", "std"] }
-ciborium-ll = { version = "0.2", default-features = false }
 core-foundation = { version = "0.9", default-features = false }
 core-foundation-sys = { version = "0.8", default-features = false }
 cpp_demangle = { version = "0.4", features = ["alloc", "std"] }
 cpufeatures = { version = "0.2", default-features = false }
-criterion-9fbad63c4bcf4a8f = { package = "criterion", version = "0.4", features = ["cargo_bench_support", "plotters", "rayon"] }
-criterion-plot-d8f496e17d97b5cb = { package = "criterion-plot", version = "0.5", default-features = false }
 debugid = { version = "0.8", default-features = false }
 encoding_rs = { version = "0.8", features = ["alloc"] }
 errno = { version = "0.2", default-features = false }
@@ -1424,17 +1443,11 @@ tokio-native-tls = { version = "0.3", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = ["Worker"] }
 
 [target.aarch64-apple-darwin.build-dependencies]
-anes = { version = "0.1" }
 autotools = { version = "0.2", default-features = false }
-ciborium = { version = "0.2", features = ["std"] }
-ciborium-io = { version = "0.2", default-features = false, features = ["alloc", "std"] }
-ciborium-ll = { version = "0.2", default-features = false }
 core-foundation = { version = "0.9", default-features = false }
 core-foundation-sys = { version = "0.8", default-features = false }
 cpp_demangle = { version = "0.4", features = ["alloc", "std"] }
 cpufeatures = { version = "0.2", default-features = false }
-criterion-9fbad63c4bcf4a8f = { package = "criterion", version = "0.4", features = ["cargo_bench_support", "plotters", "rayon"] }
-criterion-plot-d8f496e17d97b5cb = { package = "criterion-plot", version = "0.5", default-features = false }
 debugid = { version = "0.8", default-features = false }
 encoding_rs = { version = "0.8", features = ["alloc"] }
 errno = { version = "0.2", default-features = false }
@@ -1473,14 +1486,8 @@ tokio-native-tls = { version = "0.3", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = ["Worker"] }
 
 [target.x86_64-unknown-linux-gnu.dependencies]
-anes = { version = "0.1" }
-ciborium = { version = "0.2", features = ["std"] }
-ciborium-io = { version = "0.2", default-features = false, features = ["alloc", "std"] }
-ciborium-ll = { version = "0.2", default-features = false }
 cpp_demangle = { version = "0.4", features = ["alloc", "std"] }
 cpufeatures = { version = "0.2", default-features = false }
-criterion-9fbad63c4bcf4a8f = { package = "criterion", version = "0.4", features = ["cargo_bench_support", "plotters", "rayon"] }
-criterion-plot-d8f496e17d97b5cb = { package = "criterion-plot", version = "0.5", default-features = false }
 debugid = { version = "0.8", default-features = false }
 encoding_rs = { version = "0.8", features = ["alloc"] }
 findshlibs = { version = "0.10", default-features = false }
@@ -1521,15 +1528,9 @@ tokio-native-tls = { version = "0.3", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = ["Worker"] }
 
 [target.x86_64-unknown-linux-gnu.build-dependencies]
-anes = { version = "0.1" }
 autotools = { version = "0.2", default-features = false }
-ciborium = { version = "0.2", features = ["std"] }
-ciborium-io = { version = "0.2", default-features = false, features = ["alloc", "std"] }
-ciborium-ll = { version = "0.2", default-features = false }
 cpp_demangle = { version = "0.4", features = ["alloc", "std"] }
 cpufeatures = { version = "0.2", default-features = false }
-criterion-9fbad63c4bcf4a8f = { package = "criterion", version = "0.4", features = ["cargo_bench_support", "plotters", "rayon"] }
-criterion-plot-d8f496e17d97b5cb = { package = "criterion-plot", version = "0.5", default-features = false }
 debugid = { version = "0.8", default-features = false }
 encoding_rs = { version = "0.8", features = ["alloc"] }
 findshlibs = { version = "0.10", default-features = false }
